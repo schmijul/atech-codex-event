@@ -10,21 +10,58 @@ code:
   setup: |
     display.setDirectMode(true);
     WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   loop: |
     static bool medsTaken = false;
     static bool needsRedraw = true;
     static bool refreshed = false;
     static bool reminderStarted = false;
     static bool pendingApiPost = false;
+    static bool wifiScanRunning = false;
+    static int lastWifiStatus = -1;
     static unsigned long lastReminder = 0;
     static unsigned long lastApiAttempt = 0;
+    static unsigned long lastWifiScan = 0;
+
+    int wifiStatus = WiFi.status();
+    if (wifiStatus != lastWifiStatus) {
+      lastWifiStatus = wifiStatus;
+      Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"wifi_status\",\"value\":%d}}\n", wifiStatus);
+    }
+
+    unsigned long now = millis();
+    if (!wifiScanRunning && wifiStatus != WL_CONNECTED &&
+        (lastWifiScan == 0 || now - lastWifiScan >= 10000UL)) {
+      WiFi.scanNetworks(true, true);
+      wifiScanRunning = true;
+      lastWifiScan = now;
+    }
+    if (wifiScanRunning) {
+      int networksFound = WiFi.scanComplete();
+      if (networksFound >= 0) {
+        String matchingSsid;
+        for (int i = 0; i < networksFound; i++) {
+          String visibleSsid = WiFi.SSID(i);
+          if (visibleSsid.equalsIgnoreCase(WIFI_SSID)) {
+            matchingSsid = visibleSsid;
+            break;
+          }
+        }
+        Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"wifi_scan\",\"value\":{\"networks\":%d,\"target_visible\":%s}}}\n",
+          networksFound, matchingSsid.length() ? "true" : "false");
+        WiFi.scanDelete();
+        wifiScanRunning = false;
+        if (matchingSsid.length()) WiFi.begin(matchingSsid.c_str(), WIFI_PASSWORD);
+      } else if (networksFound == -2) {
+        wifiScanRunning = false;
+      }
+    }
 
     if (button.wasPressed() && !medsTaken) {
       medsTaken = true;
       speaker.stop();
       needsRedraw = true;
       pendingApiPost = true;
+      Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"meds_button\",\"value\":true}}");
     }
 
     if (resetButton.wasPressed()) {
@@ -36,8 +73,7 @@ code:
       Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"state\",\"key\":\"meds_reminder_reset\",\"value\":true}}");
     }
 
-    unsigned long now = millis();
-    if (pendingApiPost && WiFi.status() == WL_CONNECTED && now - lastApiAttempt >= 5000UL) {
+    if (pendingApiPost && wifiStatus == WL_CONNECTED && now - lastApiAttempt >= 5000UL) {
       lastApiAttempt = now;
       int apiStatus = postMedsTakenToApi();
       if (apiStatus == 201) {
