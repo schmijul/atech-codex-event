@@ -113,3 +113,9 @@
 
 - Reviewed the person picker, patient dashboard navigation, Set reminder label, and usage documentation. Fetched origin/main and confirmed no divergence. Python compilation, whitespace validation, live page routes, and read-only API checks passed.
 - Committing the dashboard source, documentation, and diary for push to main. Keeping the locally modified runtime medication database uncommitted.
+
+## 2026-10-24 — Exposed ElevenLabs credential
+
+- User asked whether the ElevenLabs key was pushed. Confirmed a populated ELEVENLABS_API_KEY in tracked .env matches the value on origin/main, introduced by commit 442d40d before the dashboard changes. Never printed the secret value.
+- GitHub metadata confirms this repository is public. The key must be revoked in ElevenLabs; deleting a file cannot revoke a credential or erase prior downloads/history.
+- Removing .env from Git tracking while preserving the local file, and ignoring .env variants except .env.example. This cleanup leaves historical commits intact; history rewriting requires separate coordination with other checkouts.
