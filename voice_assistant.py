@@ -5,6 +5,7 @@ import base64
 import io
 import json
 import os
+import secrets
 import ssl
 import threading
 import time
@@ -21,8 +22,7 @@ SAMPLE_RATE = 16000
 MAX_AUDIO_BYTES = SAMPLE_RATE * 2 * 3
 OPENAI_BASE = "https://api.openai.com/v1"
 SESSION_FILE = Path(__file__).with_name(".voice_session.json")
-SESSION_TIMEOUT_SECONDS = 120
-MAX_HISTORY_MESSAGES = 8
+MAX_HISTORY_MESSAGES = 40
 has_disclosed_voice = False
 conversation_history = []
 last_activity = 0
@@ -58,9 +58,30 @@ def make_wav(pcm):
     return output.getvalue()
 
 
+def transcribe(wav_data):
+    boundary = "----voice" + secrets.token_hex(12)
+    form = (
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\ngpt-transcribe\r\n"
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"prompt\"\r\n\r\n"
+        "Accurately transcribe personal names, ages, medication terms, and the exact words spoken.\r\n"
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"utterance.wav\"\r\n"
+        "Content-Type: audio/wav\r\n\r\n"
+    ).encode() + wav_data + f"\r\n--{boundary}--\r\n".encode()
+    result = json.loads(openai_request(
+        "/audio/transcriptions",
+        form,
+        "multipart/form-data; boundary=" + boundary,
+    ))
+    transcript = result.get("text", "").strip()
+    if not transcript:
+        raise RuntimeError("no speech recognized")
+    return transcript
+
+
 def save_session():
     temporary_file = SESSION_FILE.with_suffix(".tmp")
     temporary_file.write_text(json.dumps({
+        "version": 2,
         "updated_at": last_activity,
         "messages": conversation_history,
     }))
@@ -82,10 +103,10 @@ def load_session():
         return
     try:
         session = json.loads(SESSION_FILE.read_text())
-        last_activity = float(session["updated_at"])
-        if time.time() - last_activity >= SESSION_TIMEOUT_SECONDS:
-            clear_session("expired while host was stopped")
+        if session.get("version") != 2:
+            clear_session("old session format")
             return
+        last_activity = float(session["updated_at"])
         conversation_history = session["messages"][-MAX_HISTORY_MESSAGES:]
         has_disclosed_voice = bool(conversation_history)
         print(f"restored conversation: {len(conversation_history) // 2} turns", flush=True)
@@ -93,24 +114,12 @@ def load_session():
         clear_session("invalid saved session")
 
 
-def create_voice_reply(wav_data):
+def create_voice_reply(transcript):
     global has_disclosed_voice, conversation_history, last_activity
-    if last_activity and time.time() - last_activity >= SESSION_TIMEOUT_SECONDS:
-        clear_session("two minutes inactive")
-
     disclosure = "Your first words must be: I am an AI voice assistant. " if not has_disclosed_voice else ""
     user_message = {
         "role": "user",
-        "content": [
-            {"type": "text", "text": "Answer this spoken request."},
-            {
-                "type": "input_audio",
-                "input_audio": {
-                    "data": base64.b64encode(wav_data).decode(),
-                    "format": "wav",
-                },
-            },
-        ],
+        "content": transcript,
     }
     request_body = json.dumps({
         "model": "gpt-audio-1.5",
@@ -119,7 +128,7 @@ def create_voice_reply(wav_data):
         "messages": [
             {
                 "role": "system",
-                "content": disclosure + "You are a helpful voice assistant for an older adult. Answer directly in one natural sentence of 10 words or fewer. Speak promptly, clearly, and warmly. Do not claim to have changed devices, medication records, or external data unless you actually did so.",
+                "content": disclosure + "You are a helpful voice assistant for an older adult. Answer directly in one natural sentence of 15 words or fewer. When the user shares or corrects a personal fact, repeat it accurately to confirm it. Treat the latest correction as authoritative. Speak promptly, clearly, and warmly. Do not claim to have changed devices, medication records, or external data unless you actually did so.",
             },
             *conversation_history,
             user_message,
@@ -185,9 +194,13 @@ class VoiceHandler(BaseHTTPRequestHandler):
                 return
             print(f"received audio: {length // 2} samples from {self.client_address[0]}", flush=True)
             started = time.monotonic()
+            transcript = transcribe(make_wav(pcm))
+            print(f"transcription_seconds: {time.monotonic() - started:.2f}", flush=True)
+            print("heard:", transcript, flush=True)
+            voice_started = time.monotonic()
             with conversation_lock:
-                reply, speech = create_voice_reply(make_wav(pcm))
-            print(f"voice_model_seconds: {time.monotonic() - started:.2f}", flush=True)
+                reply, speech = create_voice_reply(transcript)
+            print(f"voice_model_seconds: {time.monotonic() - voice_started:.2f}", flush=True)
             print("reply:", reply, flush=True)
             self.send_response(200)
             self.send_header("Content-Type", "application/octet-stream")

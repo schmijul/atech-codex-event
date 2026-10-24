@@ -18,8 +18,8 @@ The bridge uses `gpt-audio-1.5` with the `marin` voice. Combining speech underst
 
 Wait for the board to join Wi-Fi. Hold the slot 1 button, speak after the beep, and release it when finished. The three-second microphone limit ends and sends a recording automatically if you keep holding the button.
 
-The rotary encoder must span slots 10 and 11. Turn it to adjust the speaker from mute through 80% in 10% steps; its LED ring shows the current level. Slot 12 is the board's built-in Restart button and cannot host the encoder.
+The rotary encoder spans slots 10 and 11. The speaker is temporarily fixed at 100% volume while encoder input is diagnosed. Pressing the encoder still ends the active conversation.
 
-Follow-up requests share the previous four exchanges. Press the volume knob to end the conversation; a low tone confirms that the host cleared it. The host also clears a conversation after two minutes without a request. The unfinished session is stored in the local ignored `.voice_session.json`, so restarting the bridge within those two minutes preserves it. The next push-to-talk request then starts a fresh conversation.
+Follow-up requests share up to the previous 20 exchanges. The host first creates an accurate text transcript with `gpt-transcribe`, then stores that text so personal facts are not repeatedly reinterpreted from old audio. Press the volume knob to end the conversation; a low tone confirms that the host cleared it. The conversation has no inactivity timeout and remains in the local ignored `.voice_session.json` across host restarts until explicitly ended.
 
 The assistant only answers verbally. It has no tools to change medication records or control the board. The audio model returns 24 kHz WAV; the host converts it to the speaker's 16 kHz format. The request starts after button release. A persistent Realtime API session is the next step if still lower first-audio latency is required.

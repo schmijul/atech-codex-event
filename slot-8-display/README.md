@@ -4,9 +4,9 @@ Atech project targeting the **14port** board.
 
 Medication reminder: display on ports **13–14**, speaker on **3–4**, meds-taken
 button on **9**, push-to-talk button on **1**, and volume knob on **10–11**.
-Turn the knob to adjust speaker volume from silent to 80%; the LED ring shows the
-level. Position 12 is the board's built-in Restart button and cannot host a
-module. Press the knob to end the current voice conversation. Hold button 1 to start recording
+The speaker is temporarily fixed at 100% volume while rotary input is diagnosed.
+The knob is connected across slots 10–11, and pressing it ends the current voice
+conversation. Hold button 1 to start recording
 (the board beeps), then release it to send the recording to the voice assistant.
 Recordings stop at three seconds even if button 1 is still held.
 The slot-1 button no longer resets or replays the medication reminder.

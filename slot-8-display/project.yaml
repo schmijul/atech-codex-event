@@ -11,12 +11,12 @@ modules:
 code:
   setup: |
     display.setDirectMode(true);
-    speaker.setVolume(0.7f);
+    speaker.setVolume(1.0f);
     volumeKnob.setAcceleration(false, 1);
     volumeKnob.resetPosition();
     volumeKnob.setRingColor(0, 180, 60);
     volumeKnob.setRingBrightness(50);
-    volumeKnob.setRingPosition(9.625f);
+    volumeKnob.setRingPosition(11.0f);
     WiFi.mode(WIFI_STA);
   loop: |
     static bool medsTaken = false;
@@ -37,7 +37,6 @@ code:
     static bool voiceRecording = false;
     static bool voiceButtonStartPending = false;
     static bool voiceStopRequested = false;
-    static int volumeStep = 7;
     static int32_t lastKnobPosition = 0;
     static String voiceApiUrl = "http://172.20.10.14:8001/api/voice";
     static String voiceEndUrl = "http://172.20.10.14:8001/api/voice/end";
@@ -45,11 +44,10 @@ code:
     volumeKnob.update();
     int32_t knobPosition = volumeKnob.getPosition();
     if (knobPosition != lastKnobPosition) {
-      volumeStep = constrain(volumeStep + (int)(knobPosition - lastKnobPosition), 0, 8);
       lastKnobPosition = knobPosition;
-      speaker.setVolume(volumeStep / 10.0f);
-      volumeKnob.setRingPosition(volumeStep * 11.0f / 8.0f);
-      Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"speaker_volume\",\"value\":%d}}\n", volumeStep * 10);
+      speaker.setVolume(1.0f);
+      volumeKnob.setRingPosition(11.0f);
+      Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"volume_knob_position\",\"value\":%ld}}\n", (long)knobPosition);
     }
     if (volumeKnob.wasPressed() && WiFi.status() == WL_CONNECTED) {
       WiFiClient endClient;
