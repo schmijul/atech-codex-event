@@ -3,4 +3,5 @@ __pycache__/
 .env
 .env.*
 !.env.example
+.voice_session.json
 slot-8-display/.wifi_secrets.h

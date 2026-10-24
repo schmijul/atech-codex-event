@@ -11,6 +11,14 @@
 - `atech validate .` passed and `atech build .` compiled the firmware (25.6% RAM, 32.3% flash). The first validate invocation used the wrong relative venv path; corrected it to `../.venv/bin` from the project directory. Python bytecode compilation also succeeded. Firmware has not been flashed because the API host has not loaded the new schedule endpoints yet.
 - Microphone subagent completed on isolated branch `codex/microphone-input` in `/tmp/atech-microphone-input`. The Atech SDK microphone module supports PCM recording/capture and sound-level readings on ports 5–6, but has no speech-to-text API; its branch adds the microphone module and level-event proof of concept. Validation/build passed there; no flash or API writes.
 - User asked to verify live microphone input. Board was found on `/dev/cu.usbmodem101`; flashed the microphone proof of concept from the isolated branch. `atech check` reported the microphone initialized (the module has no hardware read-back). Serial monitor then produced `microphone_level` values every 250 ms, typically about 70–340 in the room; while the user clapped/tapped, peaks rose to 628, 740, and 1142. This confirms the board receives sound through the microphone. Stopped the monitor, removed the temporary Wi-Fi secrets copy, and restored generated build outputs. No medication button was pressed and no database row was created.
+## 2026-10-24 — Microphone input proof of concept
+
+- Created isolated branch `codex/microphone-input` in `/tmp/atech-microphone-input`; the primary worktree has unrelated local edits and was not modified.
+- Inspected the installed SDK catalog (`atech list-modules`, `atech info microphone`, and `atech info speaker`). The exact microphone module is ICS-43434, spans adjacent ports 5 and 6, starts a background capture task on I2S_NUM_1, and emits RMS sound level as `microphone_level` every 250 ms. Speaker on ports 3–4 uses I2S_NUM_0, so the buses do not conflict.
+- The module API also exposes `startRecording()`, `stopRecording()`, `isRecording()`, `getRecording()` and `getRecordingLength()` for up to 3 seconds of PCM capture. The SDK does not include speech recognition or a live audio-to-host stream; audio transcription requires an additional host/service path.
+- Added the catalog microphone module at ports [5, 6]. Its template automatically reports sound levels, so no custom loop code or behavior changes to the medication buttons are necessary. This is an audio-input/sound activity proof of concept, not speech-to-text.
+- `atech validate slot-8-display` passed with the microphone placement. The first build lacked the ignored local `.wifi_secrets.h`; temporarily copied that local file for compilation, then removed it. The subsequent PlatformIO build succeeded (25.9% RAM, 31.9% flash). Restored generated `build/` outputs afterward so only source and diary changes remain. No board flash or API write was made.
+- Follow-up hardware check: flashed this proof-of-concept to the connected board at `/dev/cu.usbmodem101`. `atech check` reported the microphone initialized (no module read-back is available). The serial monitor streamed `microphone_level` every 250 ms: quiet room readings were usually 70–340, and while the user clapped/tapped the peaks reached 628, 740, and 1142. This verifies sound input on the attached module. No medication button was pressed and no API POST occurred. Stopped the monitor, removed the temporary Wi-Fi secrets copy, and restored generated build artifacts.
 
 ## 2026-10-24 — Medication reminder
 
@@ -78,3 +86,137 @@
 - Dashboard still had only the pre-existing row, confirming the board has not produced a successful POST. Added serial `wifi_status` transitions and `meds_button` logs for read-only diagnosis; these do not write to the API. USB port is available for a monitor check.
 - Observed board button event in serial diagnostics, but Wi-Fi status alternated `1` (SSID unavailable) and `6` (disconnected), even after the user enabled iPhone Maximize Compatibility and firmware tried `iPhone von Julian` capitalization. The API database still contains only the original row. Replaced blind `WiFi.begin` retry with async visible-network scans, logging the visible AP count and whether the configured SSID (case-insensitive) is present; when found, connect using the broadcast spelling.
 - Final verification succeeded: scan found the hotspot among 24 visible networks; the firmware connected (status 3), observed the button event, and logged `meds_api_saved` (only on HTTP 201). Read-only GET showed new row id 2 at 2026-10-24T11:04:35+00:00. The SSID scan matched case-insensitively and connects using the exact broadcast spelling. No test POST was sent.
+
+## 2026-10-24 — Voice assistant bridge
+
+- User asked to route voice commands from the board through a model and play the response on its speaker, using the OpenAI API for speech-to-text.
+- Added a small standard-library LAN server at `voice_assistant.py`: accepts up to 3 seconds of 16 kHz mono PCM, wraps it as WAV for `gpt-transcribe`, asks `gpt-6-luna` for a short reply, generates PCM speech, downsamples 24 kHz output to the board's 16 kHz speaker rate, and returns raw PCM. The API key is read only from the host's `OPENAI_API_KEY` environment.
+- Wired firmware voice activity capture to the microphone on ports 5–6. It starts at a measured sound-level threshold, stops after 900 ms of quiet or the microphone's 3-second cap, POSTs audio to the host at `172.20.10.2:8001`, and streams the returned samples into the speaker on ports 3–4. It requires at least 0.75 seconds of captured audio and has an 8-second cooldown.
+- Reference: OpenAI docs recommend `gpt-transcribe` for completed audio files and document the Speech API's raw PCM as 24 kHz signed 16-bit little-endian. `gpt-4o-mini-tts` remains usable but is deprecated for shutdown on 2027-01-06; plan migration to Realtime before then.
+- The host currently has no `OPENAI_API_KEY` environment variable. A live transcription/model/TTS round trip cannot be verified until the user starts the service in a terminal with a configured key. Do not ask the user to paste the key into chat.
+- Validated the YAML, compiled the host script, built the firmware, and uploaded it to `/dev/cu.usbmodem101`. `atech check` reports display, speaker, microphone, and both buttons initialized; live Wi-Fi status reached connected (3). A compiler warning showed that 90,000 ms overflowed the board HTTP timeout type; changed it to 60,000 ms and rebuilt/uploaded. No OpenAI request was made because the host key is missing.
+
+## 2026-10-24 — Live voice transcription check and credential cleanup
+
+- Removed the tracked `.env` from the public remote branch histories; local `.env` files stay private and ignored. The previously published ElevenLabs key must still be rotated. No key values were printed.
+- User added an OpenAI key to the ignored local `.env`. Authentication/model listing succeeded for the transcription, response, and speech models. Added automatic loading from a local ignored `.env`.
+- First requested board utterance did not reach the host: board Wi-Fi status alternated SSID unavailable/disconnected. The computer hotspot IP changed to `172.20.10.3`. Updated the default voice endpoint and added a `voice_host` serial action for later address changes.
+- Corrected 24-to-16 kHz speech conversion to produce two samples per three input samples. Reset the microphone cooldown after playback and reminder audio to avoid recording the speaker response. Live capture/transcription verification is in progress.
+- Host-only transcription test passed: a generated speech fixture saying "Hello, can you hear me?" returned that exact transcript from OpenAI. A full request to the local `/api/voice` service then returned HTTP 200 and 192,000 bytes of 16 kHz reply audio (6 seconds). These are host checks, not proof of board audio delivery.
+- Updated firmware built and uploaded successfully. The board scan sees 35 nearby networks but reports `target_visible: false` for the configured hotspot. Waiting for the user to enable the hotspot compatibility settings before repeating a physical speech test.
+- Diagnosed the Wi-Fi mismatch with macOS network information: the computer is on "Easwaran’s iPhone" using channel 44 / 5 GHz, while board credentials target "iPhone von Julian". Asked the user to choose a common hotspot; the current board cannot see Julian’s AP. The board supports 2.4 GHz, so the chosen iPhone hotspot needs Maximize Compatibility.
+
+## 2026-10-24 — Mohit hotspot migration
+
+- User supplied a new hotspot. macOS joined the actual broadcast name “Mohit’s iPhone” (curly apostrophe); the ASCII apostrophe name did not match. Updated ignored local Wi-Fi configuration without logging the password. Computer address is `172.20.10.14`; updated the voice and medication API destinations to this computer. Starting the local dashboard and repeating a physical microphone transcription check.
+- Board joined Mohit’s hotspot (Wi-Fi status 3); local dashboard and voice health endpoints both return HTTP 200 at `172.20.10.14`.
+- Luna subagent on `codex/slower-voice` produced commit `51ef6e9`; integrated its supported Speech API `speed: 0.8` setting into the live service.
+- Initial real speech did not trigger capture. Metered speech was often 100–170 RMS, below the old 400 threshold. Lowered start/silence thresholds to 100/60 and normalized captured PCM before transcription (gain capped at 20). Added manual `voice_record` action for a full 3-second diagnostic capture.
+- Further serial diagnosis revealed repeated recorder allocation failures: 124 KB total free heap was split into blocks too small for its 96 KB contiguous buffer. Replaced the 37 KB static reminder decode buffer with 256-sample playback chunks, and added allocation-failure logging/cooldown to avoid a busy retry loop. Rebuilding and repeating the physical audio test.
+- Controlled physical test passed: board IP `172.20.10.2` sent 48,000 microphone samples over Wi-Fi; OpenAI transcribed exactly "Hello, can you hear me?". The board drained all 193,452 reply PCM bytes and logged `voice_reply_played: true`; user confirmed audible audio but requested more volume. Raised the live speaker from 0.4 to 0.7 and persisted it in setup.
+- Added a manual recording beep and an auto-recording toggle for repeatable checks; drained the declared response body instead of stopping early on the socket connection flag. Shortened model replies to one sentence and handled transient TLS failures.
+- Integrated the existing main-worktree dashboard reminder implementation into the microphone branch so flashing the voice firmware preserves configured reminder timing. The hosted `/api/reminder/next` endpoint returns HTTP 200.
+- Final combined voice/reminder firmware built and uploaded successfully (14.6% static RAM). User confirmed the earlier reply was audible; increased speaker volume to 70% at their request. The later loudness-check capture contained no recognized speech (HTTP 422), so the increased level has not yet received a user quality confirmation. Restoring automatic listening after the controlled tests. Both dashboard and voice services remain hosted on this computer.
+
+## 2026-10-24 — Voice response pace
+
+- User reported the audio response was very slow. The live TTS request was explicitly set to 0.8x speed with measured-pace instructions, so changed it to the API's normal 1.0x speed and natural conversational pacing.
+- Added separate host-side duration logs for transcription, model generation, and speech synthesis so a long pause before playback can be diagnosed independently from speaking rate.
+- User measured about seven seconds of response wait. Recent logs show transcription around 0.7–1.6s, model generation 1.3–2.3s, and speech synthesis 1.1–1.6s. Confirmed the model was already GPT-6 Luna with reasoning effort `none`; made standard mode explicit and limited spoken replies to ten words to reduce generation and TTS time.
+
+## 2026-10-24 — Slot-1 push-to-talk
+
+- User asked to repurpose the reset button so voice capture has explicit start/stop points. Made slot 1 hold-to-talk: press starts recording and release stops/sends; the start beep indicates capture. Automatic sound-triggered recording is disabled/removed to prevent ambient speech from starting a request.
+- The microphone module still has a three-second hard capture limit; recordings also send automatically at that limit. Lowered the minimum send length to 0.25 seconds (the voice API's minimum) for short explicit utterances.
+- Slot 1 no longer clears medication status or replays a reminder. Updated the display labels and README to describe the new button behavior.
+
+## 2026-10-24 — Faster voice model and volume knob
+
+- User reported another delayed reply. The latest timed request showed the chained stages taking 1.21s for transcription, 1.85s for GPT-6 Luna, and 9.39s for TTS. The speech generation call was the dominant delay.
+- Replaced the three-request transcription → text model → TTS pipeline with one bounded `gpt-audio-1.5` Chat Completions request that accepts the recorded WAV and returns spoken WAV. This removes two sequential network round trips and replaces the deprecated `gpt-4o-mini-tts` voice with the current higher-quality audio model. Selected the built-in `marin` voice, which OpenAI recommends for quality.
+- The request still completes after button release rather than using a persistent Realtime session, so true sub-second conversational audio is outside this request-based design. The host now logs one end-to-end voice model duration.
+- The requested 11–12 encoder placement failed SDK validation because position 12 is the board's built-in Restart button and is reserved. The board catalog permits the adjacent 10–11 pair, so configured the encoder there. Its plug on position 12 must be moved to position 10; the plug on 11 stays in place.
+- The volume control starts at 70%, adjusts in 10% steps from mute through 80% to avoid the speaker's clipping range, and maps the level to its LED ring.
+- A host-only request with the existing speech fixture returned HTTP 200 and 84,800 bytes of speaker PCM in 2.52 seconds. The old timed pipeline took about 12.45 seconds across its three AI calls, so the one-request path reduced measured host processing by about 80%. Physical board playback remains to be checked after flashing.
+- SDK validation and firmware build passed with the encoder on 10–11 (14.8% static RAM, 32.8% flash). Uploaded successfully to `/dev/cu.usbmodem101`; `atech check` reports the display, speaker, microphone, encoder, and both buttons initialized. Restarted the host bridge with the new model. The SDK cannot electrically detect whether the encoder is plugged in, so turning it after moving the position-12 plug to position 10 is the remaining physical check.
+
+## 2026-10-24 — Voice conversation sessions
+
+- Added host-managed conversation history for four exchanges. Previous user WAV input and assistant text are included in each following `gpt-audio-1.5` request, enabling follow-up questions while keeping the existing one-call audio path.
+- The active session is saved in the ignored local `.voice_session.json` and survives a quick host restart. Pressing the volume encoder calls `POST /api/voice/end`; HTTP 204 clears the session and produces a low confirmation tone. Two minutes without a voice request also clears it automatically.
+- Host verification passed with two generated utterances: after “Remember the number 42,” the follow-up “What number did I ask you to remember?” produced “You asked me to remember 42.” The session file existed after the turns; `POST /api/voice/end` returned 204 and removed it. Validation, firmware build, upload, and `atech check` passed. A physical encoder press still requires the encoder to be wired across valid slots 10–11.
+
+## 2026-10-24 — Memory accuracy and fixed maximum volume
+
+- User confirmed the encoder is correctly connected across slots 10–11 but does not change volume. Fixed the speaker at 100% in firmware while preserving raw encoder-position logging for later diagnosis. Encoder rotation can no longer lower the fixed volume; its push action remains assigned to ending the conversation.
+- User reported that “Max” was recalled as “Clark,” then forgotten later. Raw recordings were being reinterpreted on every later turn, and the session expired after two minutes. Added a `gpt-transcribe` step and now retain its text, expanded history to 20 exchanges, and removed automatic expiry. The session persists until the explicit end endpoint is called.
+- Verification with generated speech transcribed “Remember the number 42” and its follow-up exactly, then recalled 42 correctly. Transcription took 0.70–0.79s and audio response generation took 1.99–2.41s. Setting the saved session timestamp to zero and restarting still restored both turns, confirming that inactivity no longer deletes memory. Cleared the test session afterward so the user's next request starts clean.
+- Firmware validation, build, upload, and `atech check` passed. Both remaining speaker volume assignments are 1.0 (100%). Physical loudness and the user's real “Max” recording still need an on-device check.
+
+## 2026-10-24 — Restore voice service and remove knob
+
+- User removed the encoder. Removed its module, setup, rotation code, and button-triggered conversation reset; speaker stays fixed at 100%.
+- Live diagnosis before interruption found the computer on BlockchainWeek and the board unable to see its configured hotspot. Voice logs confirmed the real Max/80 introduction and follow-up were transcribed and recalled correctly.
+- On resuming, the computer was back at 172.20.10.14, but no voice process was running and the /tmp worktree had disappeared. Restored the committed voice branch into the permanent /Users/eashwar/Documents/GitHub/atech-codex-voice worktree. The previous ignored session file disappeared with the temporary directory, so that old conversation cannot be restored from Git.
+- Installed a local user LaunchAgent to start the voice service on login and restart it if it exits. Credentials are read from the existing ignored .env in the original repository; the LaunchAgent contains no credentials. Confirmed the voice health endpoint responds HTTP 200 through 172.20.10.14:8001 and restarted the user's current dashboard from the original checkout.
+- Verified both OpenAI paths in an isolated temporary test session without modifying live memory: the audio model generated 110,400 PCM bytes in 2.43s and the transcription endpoint correctly read the generated phrase. Both local voice and dashboard endpoints respond over the hotspot IP.
+- Validated and uploaded the firmware without the encoder. `atech check` reports display, speaker, microphone, and both buttons initialized; free heap increased to 192,044 bytes. Serial monitoring confirmed hotspot visibility and connected Wi-Fi status 3.
+- Live user test passed end to end: the board at 172.20.10.2 sent 37,376 samples; the host transcribed exactly “Hello, can you hear me?” in 1.07s, generated the response in 2.53s, and returned HTTP 200. The board then logged `voice_reply_played: true`. Speaker volume remains fixed at 100%.
+
+## 2026-10-24 — Voice acceptance test instructions
+
+- Checked current service readiness before giving the user a test sequence: LaunchAgent running, voice health HTTP 200, and host IP still 172.20.10.14. Planned checks cover microphone accuracy, spoken clarity, follow-up context, name corrections, inactivity, board power cycling, host restart, and explicitly ending the conversation.
+- Confirmed the voice handler has no function tools for live weather, reminders, or medication records. Recent logs include a fabricated current-weather answer despite no weather lookup. Such answers do not demonstrate a working tool; the test instructions explicitly distinguish enabled conversation features from unavailable external actions.
+
+## 2026-10-24 — Connect presentation voice tools end to end
+
+- Integrated the four function definitions/backend actions from codex/voice-agent-tools into the permanent voice bridge while preserving text transcription, saved memory, fixed volume, and the firmware without a knob. The model now calls the local backend and reads its result before speaking.
+- Added the tool APIs to the current local dashboard while preserving the user's existing staff view, alert handling, and other dashboard changes. Added a Voice requests panel on both / and /staff with two-second polling. Help requests also create an open staff alert in the same SQLite transaction, with repeated request IDs retaining the existing deduplication.
+- Live board test: “Please help me stand up.” was transcribed correctly; request_help wrote request id 2 and staff alert id 2. The speech response acknowledged the recorded request. Verified the actual help text in the browser's staff alert list and Voice requests panel. The backend records a request; it does not contact staff outside the dashboard.
+- Ran eight backend regression tests against the integrated dashboard using a temporary database: all passed. Also tested a real OpenAI function call and the user's full microphone-to-dashboard path. No medication confirmations were written to the live database during verification.
+
+## 2026-10-24 — Dashboard lunch question and spoken answer
+
+- Added a lunch question queue to SQLite with queued, awaiting_answer, answered, and cancelled states. Dashboard staff can enter two dish labels/categories, ask the patient, see the answer, or cancel a pending question. Only one active question per patient is accepted.
+- The board polls the voice host for pending audio, plays the complete question, then acknowledges playback. Staff see “waiting for answer” only after that acknowledgement. Patients answer using the existing button-1 recording flow.
+- The host supplies the current question and its exact options to the model, so “the first one” can map to the correct dish. The existing choose_lunch action saves the selected dish/category to that question in the same transaction as the voice request. Text conversation memory remains persistent.
+- Three isolated HTTP/SQLite integration tests passed: playback is acknowledged before awaiting_answer, pending questions are not replayed after acknowledgement, short-answer context reaches the model, tool writes update the matching question, retries deduplicate, cancelled questions stay cancelled, and invalid/duplicate active questions are rejected.
+- Validated, built, and uploaded firmware. Live UI test queued vegetarian pasta/chicken and rice; the host generated the exact question and the board acknowledged playback with 204. The first answer attempt coincided with a brief Wi-Fi reconnection and did not record. On repeat, the real microphone transcribed “Vegetarian pasta.” and choose_lunch saved question 1 as answered. Confirmed “Patient answered: Vegetarian pasta · vegetarian” in the staff dashboard and captured a local screenshot. No medication confirmations were created for this test.
+
+## 2026-10-24 — Dashboard port conflict
+
+- User could not start the new dashboard because port 8000 was already occupied. `lsof` and `ps` identified an earlier `python dashboard.py` process (PID 24811) running from this repository; read-only GET `/staff` returned 404, confirming it was the old UI.
+- Changed startup to bind the HTTP socket before initializing SQLite or starting the alert thread. Port conflicts now produce a short actionable message, and the listening message is printed only after the bind succeeds.
+- Confirmed the new port-conflict message while the old server still held the port, then stopped that verified dashboard process and started the updated server. Read-only GET `/staff` returned HTTP 200 and `/api/staff` returned the existing medication history. No simulated events or family-update API calls were sent.
+
+
+## 2026-10-24 — Tagly staff dashboard integration
+
+- User asked to implement the dashboard described in `CODEX_PROMPT.md` within the current UI. The current UI is `dashboard.py`, a standard-library HTTP server and medication history page.
+- Read `CODEX_PROMPT.md`, `AGENTS.md`, `DIARY.md`, `MEDICATION_LOGGING.md`, `dashboard.py`, `slot-8-display/README.md`, and `slot-8-display/project.yaml` before changes.
+- Ran `atech describe .` in `slot-8-display`: the board currently has display ports 13–14, speaker 3–4, medication button port 9, and reset button port 1. There is no distance sensor. Per the project prompt, firmware changes requiring presence sensing must stop for a port decision; implement the software/staff dashboard pieces first and leave firmware unchanged.
+- Confirmed with `atech list-modules` and `atech info distance_sensor` that the SDK has a single-port VL53L5CX ToF distance sensor. Port 2 is available on this 14-port board and is the selected recommendation if that is where the user places it.
+- Plan: extend the existing single-file Python server with event/alert storage, wake schedule and API routes, `/staff`, and family updates. Keep `/` and the legacy `/api/events` and reminder endpoints compatible. Verify on a temporary SQLite database only; never POST to the live server.
+- Implemented the staff page and standard-library routes for event types, per-patient wake time, alerts, board state sequencing, and event-grounded family updates. Kept the existing root page, reminder API, and medication event response shape. Existing medication history rows are treated as legacy `meds_taken` activity after upgrade.
+- First temporary API run found a row-factory mismatch in alert/board queries; set `sqlite3.Row` where named columns are used. A subsequent run exposed second-resolution timestamps during same-second event auto-close; changed alert comparisons to inclusive. One verification attempt also had an incorrect expected medication-history count because it intentionally posted a meds event before checking the legacy endpoint; corrected the assertion to check the returned row id instead.
+- Temporary database checks now pass for the legacy `{}` contract, both wake and missed-medication alerts and automatic closure, company alert actions and board sequence changes, family fallback output shape, and `/staff`. `python3 -m py_compile dashboard.py` passes. No live database writes or real API calls were used.
+- Kept existing confirmations visible after upgrade by including legacy `medication_events` rows in the staff feed, alert activity checks, and family updates. Added a second warm German sentence to event-based family templates. Extracted both embedded page scripts and checked them with `node --check`; `git diff --check` is clean.
+- Kept policy checks on the requested 30-second background cadence (staff polling only reads alerts). Company event creation uses an immediate SQLite write transaction so concurrent requests cannot both pass the “no open company alert” check.
+- Added `TAGLY.md` with endpoints and a three-minute demo. Firmware remains untouched: `atech describe .` confirms no distance sensor is installed, and the prompt says to stop for the sensor port decision.
+
+
+## 2026-10-24 — Connect voice tools for the presentation
+
+- Integrated voice_tools.py and the four tool endpoints into the current dashboard without replacing its staff view. Both dashboard pages now show voice requests and poll every two seconds. Help requests also create actionable staff alerts. The permanent voice bridge now performs actual function calls while retaining persistent text memory.
+- Verified the real board phrase “Please help me stand up.” created voice request 2 and open help alert 2. Confirmed both in the browser. Eight integrated backend tests passed with temporary databases; no live medication confirmations were created for testing. The recoverable combined source is saved on codex/microphone-input in the permanent voice worktree.
+
+
+## 2026-10-24 — Staff asks lunch options and receives the spoken answer
+
+- Added editable meal labels/categories and an Ask patient control to both dashboard views. The backend queues one active question per patient; board playback acknowledgement changes it to awaiting_answer; choose_lunch saves the spoken selection back to that question. Staff can cancel pending questions.
+- Completed the real dashboard-to-speaker-to-microphone-to-database flow: question 1 offered vegetarian pasta/chicken and rice, board acknowledged playback, patient answered “Vegetarian pasta,” and the staff view displayed the recorded choice. Three isolated integration tests passed. Firmware was validated, built, and uploaded; source and tests are preserved in the permanent codex/microphone-input worktree.
+
+## 2026-10-24 — Merge the tested voice and dashboard work into main
+
+- User requested pushing the latest changes and merging into main. Built the merge in an isolated worktree, keeping the running servers and live SQLite file available. Resolved source conflicts with the flashed/tested microphone firmware and integrated dashboard, preserving reminder and staff dashboard diary sections from both lines of work.
+- Included the pending Tagly dashboard specification and usage documentation. Live database changes, API keys, local Wi-Fi configuration, conversation memory, and Finder metadata are excluded from this merge. The merge retains the main branch's existing tracked database baseline; the live local database will stay intact.

@@ -3,18 +3,18 @@
 Atech project targeting the **14port** board.
 
 Medication reminder: display on ports **13–14**, speaker on **3–4**, meds-taken
-button on **9**, and reminder-reset button on **1**.
-Set a daily start time in the dashboard. The board reads the saved time and timezone
-over Wi-Fi, starts the spoken reminder then, and repeats it every 30 seconds until
-the meds-taken button is pressed. A new local day resets the confirmation.
-Press the slot-1 button to reset the reminder and immediately replay the spoken prompt.
+button on **9**, and push-to-talk button on **1**.
+The speaker stays at 100% volume. No knob is required.
+Hold button 1 to start recording
+(the board beeps), then release it to send the recording to the voice assistant.
+Recordings stop at three seconds even if button 1 is still held.
+The slot-1 button no longer resets or replays the medication reminder.
+The screen asks “Have you taken your meds?” and shows the two button functions.
+Press button 9 after taking medication to stop reminders and show “Meds taken” on
+a green background.
 When the meds-taken button is pressed, firmware sends one HTTP POST with `{}` to
 `http://172.20.10.5:8000/api/events`. The API server must be running on the same
 network. Configure hotspot credentials in the ignored local file `.wifi_secrets.h`.
-
-The dashboard stores the daily `HH:MM` and browser IANA timezone in SQLite. The
-board checks `/api/reminder/next` every 30 seconds; it uses the server's current
-epoch in that response, so no separate clock-sync service is needed.
 
 Edit `project.yaml` to place modules, then:
 
