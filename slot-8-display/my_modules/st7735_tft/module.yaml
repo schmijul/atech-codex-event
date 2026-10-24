@@ -1,0 +1,20 @@
+id: st7735_tft
+name: ST7735 TFT display — software SPI compatibility fix
+category: display
+interface: gpio
+size: 2
+driver:
+  header: st7735_tft.h
+  source: st7735_tft.cpp
+  class_name: ST7735_TFT
+templates:
+  # SDK pin mapping: SCLK = secondary B, CS = primary B,
+  # MOSI = secondary A, DC = primary A.
+  globals: |
+    ST7735_TFT {{ instance }}({{ pin_b2 }}, {{ pin_b }}, {{ pin_a2 }}, {{ pin_a }});
+  setup: |
+    {{ instance }}.begin();
+    {{ instance }}.clear();
+lib_deps:
+  - adafruit/Adafruit GFX Library
+  - adafruit/Adafruit ST7735 and ST7789 Library

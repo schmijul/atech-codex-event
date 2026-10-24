@@ -1,0 +1,48 @@
+name: slot-8-display
+board: 14port
+modules_path:
+- /Users/eashwar/Documents/GitHub/atech-codex-event/slot-8-display/my_modules
+modules:
+- id: st7735_tft
+  instance: display
+  ports:
+  - port_13
+  - port_14
+- id: speaker
+  instance: speaker
+  ports:
+  - port_3
+  - port_4
+- id: button
+  instance: button
+  port: port_9
+code:
+  setup: 'display.setDirectMode(true);
+
+    '
+  loop: "static bool medsTaken = false;\nstatic bool needsRedraw = true;\nstatic bool\
+    \ refreshed = false;\nstatic bool reminderStarted = false;\nstatic unsigned long\
+    \ lastReminder = 0;\n\nif (button.wasPressed() && !medsTaken) {\n  medsTaken =\
+    \ true;\n  speaker.stop();\n  needsRedraw = true;\n  Serial.println(\"{\\\"type\\\
+    \":\\\"event\\\",\\\"payload\\\":{\\\"event_type\\\":\\\"state\\\",\\\"key\\\"\
+    :\\\"meds_taken\\\",\\\"value\\\":true}}\");\n}\n\n// Preserve the delayed refresh\
+    \ that worked with this display.\nif ((!refreshed && millis() > 2000) || atech_action\
+    \ == \"display_refresh\") {\n  if (!refreshed) display.begin();\n  display.setDirectMode(true);\n\
+    \  refreshed = true;\n  needsRedraw = true;\n  if (atech_action == \"display_refresh\"\
+    ) atechDone();\n}\n\nif (needsRedraw) {\n  display.fillScreen(medsTaken ? ST7735_TFT::COLOR_GREEN\
+    \ : ST7735_TFT::COLOR_BLUE);\n  if (medsTaken) {\n    display.displayText(\"Meds\
+    \ taken\", 20, 30, 2, ST7735_TFT::COLOR_BLACK);\n  } else {\n    display.displayText(\"\
+    Have you\", 32, 8, 2, ST7735_TFT::COLOR_WHITE);\n    display.displayText(\"taken\
+    \ your\", 20, 28, 2, ST7735_TFT::COLOR_WHITE);\n    display.displayText(\"meds?\"\
+    , 50, 48, 2, ST7735_TFT::COLOR_YELLOW);\n    display.displayText(\"Press button\
+    \ when taken\", 11, 70, 1, ST7735_TFT::COLOR_WHITE);\n  }\n  needsRedraw = false;\n\
+    }\n\n// A short chime repeats until acknowledged; audio runs in the background.\n\
+    unsigned long now = millis();\nif (refreshed && !medsTaken && (!reminderStarted\
+    \ || now - lastReminder >= 30000UL)) {\n  speaker.playNote(NOTE_C5, 180);\n  lastReminder\
+    \ = now;\n  reminderStarted = true;\n  Serial.println(\"{\\\"type\\\":\\\"event\\\
+    \",\\\"payload\\\":{\\\"event_type\\\":\\\"log\\\",\\\"key\\\":\\\"meds_reminder\\\
+    \",\\\"value\\\":\\\"Have you taken your meds?\\\"}}\");\n}\n\nif (atech_action\
+    \ == \"display_status\") {\n  Serial.printf(\"{\\\"type\\\":\\\"event\\\",\\\"\
+    payload\\\":{\\\"event_type\\\":\\\"state\\\",\\\"key\\\":\\\"display_text\\\"\
+    ,\\\"value\\\":\\\"%s\\\"}}\\n\", medsTaken ? \"Meds taken\" : \"Have you taken\
+    \ your meds?\");\n  atechDone();\n}\n"

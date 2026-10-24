@@ -1,0 +1,31 @@
+name: display-pin-diagnostic
+board: 14port
+modules_path: ../my_modules
+modules:
+  - {id: display_probe, instance: screen, ports: [13, 14]}
+code:
+  loop: |
+    static int candidate = 24;
+    static unsigned long last = 0;
+    static bool started = false;
+    if (!started && millis() >= 2000) {
+      screen.probe(0);
+      started = true;
+    }
+    if (candidate < 24 && millis() - last >= 3000) {
+      screen.probe(candidate++);
+      last = millis();
+    }
+    if (atech_action == "probe_again") {
+      candidate = 0;
+      last = millis();
+      atechDone();
+    }
+    if (atech_action == "probe_select") {
+      int number = atech_value.toInt();
+      if (number >= 1 && number <= 24) {
+        candidate = 24;
+        screen.probe(number - 1);
+        atechDone();
+      } else atechFail("Choose a test number from 1 to 24");
+    }

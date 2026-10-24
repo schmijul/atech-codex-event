@@ -1,0 +1,19 @@
+name: display-pin-diagnostic
+board: 14port
+modules_path:
+- /Users/eashwar/Documents/GitHub/atech-codex-event/slot-8-display/my_modules
+modules:
+- id: display_probe
+  instance: screen
+  ports:
+  - port_13
+  - port_14
+code:
+  loop: "static int candidate = 24;\nstatic unsigned long last = 0;\nstatic bool started\
+    \ = false;\nif (!started && millis() >= 2000) {\n  screen.probe(0);\n  started\
+    \ = true;\n}\nif (candidate < 24 && millis() - last >= 3000) {\n  screen.probe(candidate++);\n\
+    \  last = millis();\n}\nif (atech_action == \"probe_again\") {\n  candidate =\
+    \ 0;\n  last = millis();\n  atechDone();\n}\nif (atech_action == \"probe_select\"\
+    ) {\n  int number = atech_value.toInt();\n  if (number >= 1 && number <= 24) {\n\
+    \    candidate = 24;\n    screen.probe(number - 1);\n    atechDone();\n  } else\
+    \ atechFail(\"Choose a test number from 1 to 24\");\n}\n"

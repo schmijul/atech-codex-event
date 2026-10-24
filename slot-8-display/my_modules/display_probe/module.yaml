@@ -1,0 +1,14 @@
+id: display_probe
+name: Display signal assignment diagnostic
+category: display
+interface: gpio
+size: 2
+driver:
+  header: display_probe.h
+  class_name: DisplayProbe
+templates:
+  globals: |
+    DisplayProbe {{ instance }}({{ pin_a }}, {{ pin_b }}, {{ pin_a2 }}, {{ pin_b2 }});
+lib_deps:
+  - adafruit/Adafruit GFX Library
+  - adafruit/Adafruit ST7735 and ST7789 Library
