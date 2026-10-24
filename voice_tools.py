@@ -91,6 +91,72 @@ def initialize_database(database):
             recipient_id INTEGER NOT NULL, activity TEXT NOT NULL,
             created_at_utc TEXT NOT NULL, played_at_utc TEXT,
             UNIQUE(request_id, recipient_id))''')
+        db.execute('''CREATE TABLE IF NOT EXISTS lunch_questions (
+            id INTEGER PRIMARY KEY, patient_id INTEGER NOT NULL,
+            options TEXT NOT NULL, status TEXT NOT NULL,
+            created_at_utc TEXT NOT NULL, spoken_at_utc TEXT,
+            answered_at_utc TEXT, choice TEXT, details TEXT)''')
+
+
+def create_lunch_question(database, patient_id, options):
+    if type(patient_id) is not int or patient_id < 1:
+        raise ValueError('Invalid patient ID.')
+    if not isinstance(options, list) or len(options) != 2:
+        raise ValueError('Provide two lunch options.')
+    for option in options:
+        if not isinstance(option, dict) or set(option) != {'label', 'choice'}:
+            raise ValueError('Each option needs a label and choice.')
+        if not isinstance(option['label'], str) or not 1 <= len(option['label'].strip()) <= 80:
+            raise ValueError('Option labels must contain 1–80 characters.')
+        if option['choice'] not in ('vegetarian', 'meat', 'vegan', 'fish', 'other'):
+            raise ValueError('Invalid dietary category.')
+    if options[0]['label'].strip().casefold() == options[1]['label'].strip().casefold():
+        raise ValueError('The two options must be different.')
+    options = [{'label': item['label'].strip(), 'choice': item['choice']} for item in options]
+    with sqlite3.connect(database) as db:
+        db.execute('BEGIN IMMEDIATE')
+        if not db.execute('SELECT 1 FROM patients WHERE id=?', (patient_id,)).fetchone():
+            raise ValueError('Unknown patient.')
+        if db.execute("SELECT 1 FROM lunch_questions WHERE patient_id=? AND status IN ('queued','awaiting_answer')", (patient_id,)).fetchone():
+            raise ValueError('A lunch question is already waiting for this patient. Cancel it before asking again.')
+        cursor = db.execute("INSERT INTO lunch_questions (patient_id,options,status,created_at_utc) VALUES (?,?,'queued',?)",
+                            (patient_id, json.dumps(options), datetime.now(timezone.utc).isoformat(timespec='seconds')))
+        question_id = cursor.lastrowid
+    return get_lunch_question(database, patient_id, question_id=question_id)
+
+
+def get_lunch_question(database, patient_id=1, pending_only=False, question_id=None):
+    with sqlite3.connect(database) as db:
+        db.row_factory = sqlite3.Row
+        query = 'SELECT * FROM lunch_questions WHERE patient_id=?'
+        parameters = [patient_id]
+        if pending_only:
+            query += " AND status='queued'"
+        if question_id is not None:
+            query += ' AND id=?'
+            parameters.append(question_id)
+        row = db.execute(query + ' ORDER BY id DESC LIMIT 1', parameters).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        result['options'] = json.loads(result['options'])
+        result['question'] = 'For lunch, would you like ' + ' or '.join(item['label'] for item in result['options']) + '? Hold button one to answer.'
+        return result
+
+
+def update_lunch_question(database, patient_id, question_id, action):
+    with sqlite3.connect(database) as db:
+        if action == 'spoken':
+            db.execute("UPDATE lunch_questions SET status='awaiting_answer',spoken_at_utc=? WHERE id=? AND patient_id=? AND status='queued'",
+                       (datetime.now(timezone.utc).isoformat(timespec='seconds'), question_id, patient_id))
+        elif action == 'cancel':
+            db.execute("UPDATE lunch_questions SET status='cancelled' WHERE id=? AND patient_id=? AND status IN ('queued','awaiting_answer')", (question_id, patient_id))
+        else:
+            raise ValueError('Unknown lunch action.')
+    result = get_lunch_question(database, patient_id, question_id=question_id)
+    if result is None:
+        raise ValueError('Lunch question not found.')
+    return result
 
 
 def invite_neighbors(db, request_id, patient_id, activity):
@@ -169,6 +235,11 @@ def execute_tool(database, name, arguments, request_id, patient_id=1):
         elif name == 'choose_lunch':
             result.update(status='recorded', choice=arguments['choice'], ordered=False,
                           message='Lunch preference recorded; no kitchen order has been sent.')
+            question = db.execute("SELECT id FROM lunch_questions WHERE patient_id=? AND status IN ('queued','awaiting_answer') ORDER BY id DESC LIMIT 1", (patient_id,)).fetchone()
+            if question:
+                db.execute("UPDATE lunch_questions SET status='answered',answered_at_utc=?,choice=?,details=? WHERE id=?",
+                           (timestamp, arguments['choice'], arguments['details'], question[0]))
+                result['question_id'] = question[0]
         else:
             if arguments['action'] == 'set':
                 db.executemany('INSERT INTO dashboard_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',

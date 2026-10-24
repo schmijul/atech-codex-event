@@ -5,6 +5,7 @@ import base64
 import io
 import json
 import os
+import re
 import secrets
 import ssl
 import threading
@@ -33,6 +34,45 @@ conversation_history = []
 last_activity = 0
 conversation_lock = threading.Lock()
 SYSTEM_PROMPT = Path(__file__).with_name("system_prompt.md").read_text()
+cached_lunch_audio = None
+
+
+def lunch_question(pending_only=False):
+    path = "/api/lunch/pending" if pending_only else "/api/lunch"
+    with urllib.request.urlopen(BACKEND_URL + path + "?patient_id=1", timeout=3) as response:
+        return json.loads(response.read())["question"]
+
+
+def decode_speech(audio):
+    wav_data = base64.b64decode(audio["data"])
+    with wave.open(io.BytesIO(wav_data), "rb") as wav:
+        if wav.getnchannels() != 1 or wav.getsampwidth() != 2 or wav.getframerate() != 24000:
+            raise RuntimeError("voice model returned an unsupported WAV format")
+        samples = array("h", wav.readframes(wav.getnframes()))
+    output = array("h")
+    for index in range(0, len(samples) - 2, 3):
+        output.extend((samples[index], (samples[index + 1] + samples[index + 2]) // 2))
+    return output.tobytes()
+
+
+def lunch_prompt_audio(question):
+    global cached_lunch_audio
+    if cached_lunch_audio and cached_lunch_audio[0] == question["id"]:
+        return cached_lunch_audio[1]
+    body = json.dumps({
+        "model": "gpt-audio-1.5", "modalities": ["text", "audio"],
+        "audio": {"voice": "marin", "format": "wav"},
+        "messages": [
+            {"role": "system", "content": "Read the supplied lunch question aloud exactly as written. Do not answer it or add anything. Speak clearly."},
+            {"role": "user", "content": question["question"]},
+        ],
+    }).encode()
+    result = json.loads(openai_request("/chat/completions", body, "application/json"))
+    audio = result["choices"][0]["message"]["audio"]
+    speech = decode_speech(audio)
+    cached_lunch_audio = (question["id"], speech)
+    print("lunch question ready:", question["id"], audio.get("transcript", ""), flush=True)
+    return speech
 
 
 def call_backend(tool_call):
@@ -143,6 +183,10 @@ def create_voice_reply(transcript):
         "role": "user",
         "content": transcript,
     }
+    question = lunch_question()
+    lunch_context = ""
+    if question and question["status"] in ("queued", "awaiting_answer"):
+        lunch_context = "\nThe dashboard has asked this patient: " + question["question"] + " Options and dietary categories: " + json.dumps(question["options"]) + ". Interpret short replies such as 'the first one' using these options. When the answer is clear, call choose_lunch with the selected category and exact selected dish label in details. Ask for clarification if unclear."
     request_body = json.dumps({
         "model": "gpt-audio-1.5",
         "modalities": ["text", "audio"],
@@ -150,7 +194,7 @@ def create_voice_reply(transcript):
         "messages": [
             {
                 "role": "system",
-                "content": disclosure + SYSTEM_PROMPT + "\nKeep replies to one or two short sentences. Preserve personal facts exactly. Current local time: " + datetime.now(ZoneInfo("Europe/Berlin")).isoformat(timespec="minutes") + ". Timezone: Europe/Berlin.",
+                "content": disclosure + SYSTEM_PROMPT + lunch_context + "\nKeep replies to one or two short sentences. Preserve personal facts exactly. Current local time: " + datetime.now(ZoneInfo("Europe/Berlin")).isoformat(timespec="minutes") + ". Timezone: Europe/Berlin.",
             },
             *conversation_history,
             user_message,
@@ -170,21 +214,7 @@ def create_voice_reply(transcript):
             request_data["messages"].append({"role": "tool", "tool_call_id": call["id"], "content": json.dumps(call_backend(call))})
     audio = message["audio"]
     transcript = audio.get("transcript", "").strip()
-    wav_data = base64.b64decode(audio["data"])
-    with wave.open(io.BytesIO(wav_data), "rb") as wav:
-        if wav.getnchannels() != 1 or wav.getsampwidth() != 2 or wav.getframerate() != 24000:
-            raise RuntimeError("voice model returned an unsupported WAV format")
-        pcm_24k = wav.readframes(wav.getnframes())
-
-    # The audio model returns 24 kHz PCM; the board speaker uses 16 kHz.
-    samples_24k = memoryview(pcm_24k).cast("h")
-    samples_16k = bytearray()
-    for index in range(0, len(samples_24k) - 2, 3):
-        # Two output samples for every three input samples: 24 kHz -> 16 kHz.
-        first = samples_24k[index]
-        second = (samples_24k[index + 1] + samples_24k[index + 2]) // 2
-        samples_16k.extend(int(first).to_bytes(2, "little", signed=True))
-        samples_16k.extend(int(second).to_bytes(2, "little", signed=True))
+    speech = decode_speech(audio)
     has_disclosed_voice = True
     conversation_history.extend([
         user_message,
@@ -193,11 +223,30 @@ def create_voice_reply(transcript):
     conversation_history = conversation_history[-MAX_HISTORY_MESSAGES:]
     last_activity = time.time()
     save_session()
-    return transcript, bytes(samples_16k)
+    return transcript, speech
 
 
 class VoiceHandler(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path == "/api/voice/prompt":
+            try:
+                question = lunch_question(pending_only=True)
+                if question is None:
+                    self.send_response(204)
+                    self.end_headers()
+                    return
+                with conversation_lock:
+                    speech = lunch_prompt_audio(question)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", str(len(speech)))
+                self.send_header("X-Lunch-Question-ID", str(question["id"]))
+                self.end_headers()
+                self.wfile.write(speech)
+            except (urllib.error.URLError, TimeoutError, KeyError, ValueError, RuntimeError) as error:
+                print("lunch prompt failed:", error, flush=True)
+                self.send_error(502, "Lunch prompt unavailable")
+            return
         if self.path != "/health":
             self.send_error(404)
             return
@@ -207,6 +256,18 @@ class VoiceHandler(BaseHTTPRequestHandler):
         self.wfile.write(b'{"ok":true}')
 
     def do_POST(self):
+        prompt_played = re.fullmatch(r"/api/voice/prompt/([1-9]\d*)/played", self.path)
+        if prompt_played:
+            try:
+                request = urllib.request.Request(BACKEND_URL + "/api/lunch/" + prompt_played[1] + "/spoken", data=b"{}", headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(request, timeout=3) as response:
+                    response.read()
+                print("lunch question played:", prompt_played[1], flush=True)
+                self.send_response(204)
+                self.end_headers()
+            except (urllib.error.URLError, TimeoutError):
+                self.send_error(502, "Could not acknowledge lunch question")
+            return
         if self.path == "/api/voice/end":
             with conversation_lock:
                 clear_session("end endpoint requested")

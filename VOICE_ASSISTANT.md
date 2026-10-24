@@ -24,4 +24,12 @@ The speaker stays at 100% volume. No rotary encoder is required.
 
 Follow-up requests share up to the previous 20 exchanges. The host transcribes speech with `gpt-transcribe` and stores text so personal facts are not repeatedly reinterpreted from old audio. The conversation has no inactivity timeout and remains in the local ignored `.voice_session.json` across host restarts until explicitly ended. To start fresh, run `curl -X POST http://localhost:8001/api/voice/end` on the host.
 
-The assistant only answers verbally. It has no tools to change medication records or control the board. The audio model returns 24 kHz WAV; the host converts it to the speaker's 16 kHz format. The request starts after button release. A persistent Realtime API session is the next step if still lower first-audio latency is required.
+The assistant can record help requests, invite same-floor residents, record lunch preferences, and read/change reminder settings through the backend tools. Medication confirmations still require the physical meds-taken button. The audio model returns 24 kHz WAV, which the host converts to the speaker's 16 kHz format.
+
+## Ask the patient about lunch
+
+In the dashboard or staff view, enter two meal labels and their dietary categories under “Ask patient about lunch,” then click “Ask patient.” The board polls every two seconds and speaks the queued question. The dashboard moves from “Queued” to “Question spoken” only after the board acknowledges complete playback.
+
+The patient holds button 1, speaks after its beep, then releases it. A clear choice is saved to the question and displayed as “Patient answered.” Short answers such as “the first one” use the queued options as context. An unclear answer prompts clarification rather than completing the question. Staff can cancel an unanswered question before asking another one. This flow currently targets Patient 1 on the connected board.
+
+Backend endpoints: `POST /api/lunch/ask` with `{patient_id, options: [{label, choice}, {label, choice}]}`, `GET /api/lunch`, `GET /api/lunch/pending`, and `POST /api/lunch/ID/spoken` or `/cancel` with `{}`. The voice host serves PCM at `GET /api/voice/prompt` and accepts playback acknowledgement at `POST /api/voice/prompt/ID/played`.

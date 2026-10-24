@@ -31,6 +31,7 @@ code:
     static bool voiceRecording = false;
     static bool voiceButtonStartPending = false;
     static bool voiceStopRequested = false;
+    static unsigned long lastVoicePromptPoll = 0;
     static String voiceApiUrl = "http://172.20.10.14:8001/api/voice";
 
     int wifiStatus = WiFi.status();
@@ -225,7 +226,47 @@ code:
       voiceApiUrl = "http://" + atech_value + ":8001/api/voice";
       atechDone();
     }
-    unsigned long voiceNow = millis();
+    if (!voiceRecording && !voiceButtonStartPending && !resetButton.isPressed() && wifiStatus == WL_CONNECTED && millis() - lastVoicePromptPoll >= 2000UL) {
+      lastVoicePromptPoll = millis();
+      WiFiClient promptClient;
+      HTTPClient promptRequest;
+      promptRequest.setConnectTimeout(2000);
+      promptRequest.setTimeout(15000);
+      if (promptRequest.begin(promptClient, voiceApiUrl + "/prompt")) {
+        const char* promptHeaders[] = {"X-Lunch-Question-ID"};
+        promptRequest.collectHeaders(promptHeaders, 1);
+        int promptStatus = promptRequest.GET();
+        if (promptStatus == 200) {
+          String questionId = promptRequest.header("X-Lunch-Question-ID");
+          WiFiClient* promptResponse = promptRequest.getStreamPtr();
+          int remaining = promptRequest.getSize();
+          int16_t promptChunk[256];
+          speaker.stop();
+          promptResponse->setTimeout(5000);
+          while (remaining >= 2) {
+            int received = promptResponse->readBytes((char*)promptChunk, min((int)sizeof(promptChunk), remaining) & ~1);
+            if (received <= 0) break;
+            speaker.writeSamples(promptChunk, received / sizeof(int16_t));
+            remaining -= received;
+          }
+          promptRequest.end();
+          if (remaining == 0 && questionId.length()) {
+            HTTPClient playedRequest;
+            WiFiClient playedClient;
+            playedRequest.setTimeout(3000);
+            if (playedRequest.begin(playedClient, voiceApiUrl + "/prompt/" + questionId + "/played")) {
+              playedRequest.addHeader("Content-Type", "application/json");
+              int playedStatus = playedRequest.POST("{}");
+              Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"lunch_question_played\",\"value\":%d}}\n", playedStatus);
+              playedRequest.end();
+            }
+          }
+        } else {
+          promptRequest.end();
+        }
+      }
+      lastVoicePromptPoll = millis();
+    }
     bool voiceRequested = atech_action == "voice_record" || voiceButtonStartPending;
     if (atech_action == "voice_record") atechDone();
     if (!voiceRecording && wifiStatus == WL_CONNECTED && voiceRequested) {

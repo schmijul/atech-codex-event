@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from voice_tools import (TOOLS, execute_tool, initialize_database, list_requests,
                          list_patients, save_patient, list_invitations,
                          mark_invitation_played, dispatch_social_request)
+from voice_tools import create_lunch_question, get_lunch_question, update_lunch_question
 
 DATABASE = Path(__file__).with_name('meds_taken.sqlite3')
 PAGE = '''<!doctype html>
@@ -152,6 +153,16 @@ VOICE_PANEL = '''<section style="margin:24px 0;background:white;border:1px solid
 <script>(()=>{async function loadVoice(){const box=document.getElementById('voice-requests');try{const response=await fetch('/api/voice/requests',{cache:'no-store'});if(!response.ok)throw Error('Could not load requests');const rows=await response.json();box.replaceChildren();if(!rows.length){box.textContent='No voice requests yet.';return}const names={request_help:'Help requested',request_floor_activity:'Company / activity',choose_lunch:'Lunch preference',medication_reminder:'Medication reminder'};for(const row of rows.slice(0,20)){const card=document.createElement('div');card.style.cssText='border-top:1px solid #eee;padding:16px 0';const title=document.createElement('strong');title.textContent=(names[row.tool]||row.tool)+' · '+new Date(row.result.created_at_utc).toLocaleTimeString();const details=document.createElement('p');details.textContent=Object.entries(row.arguments).filter(([k,v])=>v!==''&&k!=='timezone').map(([k,v])=>k+': '+v).join(' · ');const status=document.createElement('div');status.textContent=row.result.message||row.result.status;card.append(title,details,status);box.append(card)}}catch(error){box.textContent=error.message}}loadVoice();setInterval(loadVoice,2000)})();</script>'''
 PAGE = PAGE.replace('</main>', VOICE_PANEL + '</main>')
 STAFF_PAGE = STAFF_PAGE.replace('</main>', VOICE_PANEL + '</main>')
+
+LUNCH_PANEL = '''<section class="schedule" style="padding:24px;margin-bottom:24px"><h2>Ask patient about lunch</h2><p>The board speaks these options. The patient holds button 1 to answer.</p>
+<form id="lunch-form"><label>Option 1<input id="lunch-option-one" value="Vegetarian pasta" maxlength="80" required><select id="lunch-category-one"><option value="vegetarian">Vegetarian</option><option value="meat">Meat</option><option value="vegan">Vegan</option><option value="fish">Fish</option><option value="other">Other</option></select></label>
+<label>Option 2<input id="lunch-option-two" value="Chicken and rice" maxlength="80" required><select id="lunch-category-two"><option value="meat">Meat</option><option value="vegetarian">Vegetarian</option><option value="vegan">Vegan</option><option value="fish">Fish</option><option value="other">Other</option></select></label>
+<button id="ask-lunch">Ask patient</button><button id="cancel-lunch" type="button" hidden>Cancel question</button></form><p id="lunch-status" role="status">Ready to ask.</p></section>
+<script>(()=>{const byId=id=>document.getElementById(id);let current=null;async function loadLunch(){try{const response=await fetch('/api/lunch',{cache:'no-store'});if(!response.ok)throw Error('Could not load lunch status');current=(await response.json()).question;const active=current&&['queued','awaiting_answer'].includes(current.status);byId('ask-lunch').disabled=!!active;byId('cancel-lunch').hidden=!active;const labels={queued:'Queued — waiting for the board to speak.',awaiting_answer:'Question spoken — waiting for the patient’s answer.',cancelled:'Question cancelled. Ready to ask again.'};byId('lunch-status').textContent=!current?'Ready to ask.':current.status==='answered'?'Patient answered: '+(current.details||current.choice)+' · '+current.choice:labels[current.status]}catch(error){byId('lunch-status').textContent=error.message}}
+byId('lunch-form').onsubmit=async event=>{event.preventDefault();byId('ask-lunch').disabled=true;try{const options=[{label:byId('lunch-option-one').value,choice:byId('lunch-category-one').value},{label:byId('lunch-option-two').value,choice:byId('lunch-category-two').value}];const response=await fetch('/api/lunch/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patient_id:1,options})});const data=await response.json();if(!response.ok)throw Error(data.error);await loadLunch()}catch(error){byId('lunch-status').textContent=error.message;byId('ask-lunch').disabled=false}};
+byId('cancel-lunch').onclick=async()=>{if(!current)return;await fetch('/api/lunch/'+current.id+'/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});await loadLunch()};loadLunch();setInterval(loadLunch,2000)})();</script>'''
+PAGE = PAGE.replace('<div class="metrics">', LUNCH_PANEL + '<div class="metrics">')
+STAFF_PAGE = STAFF_PAGE.replace('<section><div class="section-head"><h2>Wake deadline', LUNCH_PANEL + '<section><div class="section-head"><h2>Wake deadline')
 
 
 def connect(readonly=False):
@@ -306,6 +317,22 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path)
+        lunch_action = re.fullmatch(r'/api/lunch/([1-9]\d*)/(spoken|cancel)', path.path)
+        if path.path == '/api/lunch/ask' or lunch_action:
+            try:
+                data = self.read_json()
+                if lunch_action:
+                    if data: raise ValueError('Expected an empty object.')
+                    result = update_lunch_question(DATABASE, 1, int(lunch_action[1]), lunch_action[2])
+                else:
+                    if set(data) != {'patient_id', 'options'}: raise ValueError('Provide patient_id and options.')
+                    result = create_lunch_question(DATABASE, data['patient_id'], data['options'])
+                self.send_json(200, {'question': result})
+            except (ValueError, UnicodeDecodeError) as error:
+                self.send_json(400, {'error': str(error)})
+            except sqlite3.Error:
+                self.send_json(503, {'error': 'Database unavailable.'})
+            return
         played = re.fullmatch(r'/api/patients/([1-9]\d*)/invitations/([1-9]\d*)/played', path.path)
         dispatch = re.fullmatch(r'/api/social/requests/([1-9]\d*)/dispatch', path.path)
         if path.path.startswith('/api/voice/tools/') or path.path == '/api/patients' or played or dispatch:
@@ -445,6 +472,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path)
+        if path.path in ('/api/lunch', '/api/lunch/pending'):
+            try:
+                patient_id = int(parse_qs(path.query).get('patient_id', ['1'])[0])
+                self.send_json(200, {'question': get_lunch_question(DATABASE, patient_id, path.path.endswith('/pending'))})
+            except ValueError:
+                self.send_json(400, {'error': 'Invalid patient ID.'})
+            except sqlite3.Error:
+                self.send_json(503, {'error': 'Database unavailable.'})
+            return
         inbox = re.fullmatch(r'/api/patients/([1-9]\d*)/invitations(/next)?', path.path)
         if path.path in ('/api/voice/tools', '/api/voice/requests', '/api/patients', '/api/social/invitations') or inbox:
             try:
