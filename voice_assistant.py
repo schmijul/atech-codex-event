@@ -6,6 +6,7 @@ import io
 import json
 import os
 import ssl
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -19,7 +20,13 @@ PORT = 8001
 SAMPLE_RATE = 16000
 MAX_AUDIO_BYTES = SAMPLE_RATE * 2 * 3
 OPENAI_BASE = "https://api.openai.com/v1"
+SESSION_FILE = Path(__file__).with_name(".voice_session.json")
+SESSION_TIMEOUT_SECONDS = 120
+MAX_HISTORY_MESSAGES = 8
 has_disclosed_voice = False
+conversation_history = []
+last_activity = 0
+conversation_lock = threading.Lock()
 
 
 def openai_request(path, data, content_type):
@@ -51,9 +58,60 @@ def make_wav(pcm):
     return output.getvalue()
 
 
+def save_session():
+    temporary_file = SESSION_FILE.with_suffix(".tmp")
+    temporary_file.write_text(json.dumps({
+        "updated_at": last_activity,
+        "messages": conversation_history,
+    }))
+    temporary_file.replace(SESSION_FILE)
+
+
+def clear_session(reason):
+    global conversation_history, has_disclosed_voice, last_activity
+    conversation_history = []
+    has_disclosed_voice = False
+    last_activity = 0
+    SESSION_FILE.unlink(missing_ok=True)
+    print(f"conversation ended: {reason}", flush=True)
+
+
+def load_session():
+    global conversation_history, has_disclosed_voice, last_activity
+    if not SESSION_FILE.exists():
+        return
+    try:
+        session = json.loads(SESSION_FILE.read_text())
+        last_activity = float(session["updated_at"])
+        if time.time() - last_activity >= SESSION_TIMEOUT_SECONDS:
+            clear_session("expired while host was stopped")
+            return
+        conversation_history = session["messages"][-MAX_HISTORY_MESSAGES:]
+        has_disclosed_voice = bool(conversation_history)
+        print(f"restored conversation: {len(conversation_history) // 2} turns", flush=True)
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        clear_session("invalid saved session")
+
+
 def create_voice_reply(wav_data):
-    global has_disclosed_voice
+    global has_disclosed_voice, conversation_history, last_activity
+    if last_activity and time.time() - last_activity >= SESSION_TIMEOUT_SECONDS:
+        clear_session("two minutes inactive")
+
     disclosure = "Your first words must be: I am an AI voice assistant. " if not has_disclosed_voice else ""
+    user_message = {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Answer this spoken request."},
+            {
+                "type": "input_audio",
+                "input_audio": {
+                    "data": base64.b64encode(wav_data).decode(),
+                    "format": "wav",
+                },
+            },
+        ],
+    }
     request_body = json.dumps({
         "model": "gpt-audio-1.5",
         "modalities": ["text", "audio"],
@@ -63,19 +121,8 @@ def create_voice_reply(wav_data):
                 "role": "system",
                 "content": disclosure + "You are a helpful voice assistant for an older adult. Answer directly in one natural sentence of 10 words or fewer. Speak promptly, clearly, and warmly. Do not claim to have changed devices, medication records, or external data unless you actually did so.",
             },
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "Answer this spoken request."},
-                    {
-                        "type": "input_audio",
-                        "input_audio": {
-                            "data": base64.b64encode(wav_data).decode(),
-                            "format": "wav",
-                        },
-                    },
-                ],
-            },
+            *conversation_history,
+            user_message,
         ],
     }).encode()
     result = json.loads(openai_request("/chat/completions", request_body, "application/json"))
@@ -97,6 +144,13 @@ def create_voice_reply(wav_data):
         samples_16k.extend(int(first).to_bytes(2, "little", signed=True))
         samples_16k.extend(int(second).to_bytes(2, "little", signed=True))
     has_disclosed_voice = True
+    conversation_history.extend([
+        user_message,
+        {"role": "assistant", "content": transcript},
+    ])
+    conversation_history = conversation_history[-MAX_HISTORY_MESSAGES:]
+    last_activity = time.time()
+    save_session()
     return transcript, bytes(samples_16k)
 
 
@@ -111,6 +165,12 @@ class VoiceHandler(BaseHTTPRequestHandler):
         self.wfile.write(b'{"ok":true}')
 
     def do_POST(self):
+        if self.path == "/api/voice/end":
+            with conversation_lock:
+                clear_session("knob pressed")
+            self.send_response(204)
+            self.end_headers()
+            return
         if self.path != "/api/voice":
             self.send_error(404)
             return
@@ -125,7 +185,8 @@ class VoiceHandler(BaseHTTPRequestHandler):
                 return
             print(f"received audio: {length // 2} samples from {self.client_address[0]}", flush=True)
             started = time.monotonic()
-            reply, speech = create_voice_reply(make_wav(pcm))
+            with conversation_lock:
+                reply, speech = create_voice_reply(make_wav(pcm))
             print(f"voice_model_seconds: {time.monotonic() - started:.2f}", flush=True)
             print("reply:", reply, flush=True)
             self.send_response(200)
@@ -151,5 +212,6 @@ if __name__ == "__main__":
                     os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
     if not os.environ.get("OPENAI_API_KEY"):
         raise SystemExit("Set OPENAI_API_KEY in this terminal before starting the voice bridge.")
+    load_session()
     print(f"Voice bridge listening on http://0.0.0.0:{PORT}", flush=True)
     ThreadingHTTPServer((HOST, PORT), VoiceHandler).serve_forever()

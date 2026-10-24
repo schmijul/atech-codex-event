@@ -40,6 +40,7 @@ code:
     static int volumeStep = 7;
     static int32_t lastKnobPosition = 0;
     static String voiceApiUrl = "http://172.20.10.14:8001/api/voice";
+    static String voiceEndUrl = "http://172.20.10.14:8001/api/voice/end";
 
     volumeKnob.update();
     int32_t knobPosition = volumeKnob.getPosition();
@@ -49,6 +50,21 @@ code:
       speaker.setVolume(volumeStep / 10.0f);
       volumeKnob.setRingPosition(volumeStep * 11.0f / 8.0f);
       Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"speaker_volume\",\"value\":%d}}\n", volumeStep * 10);
+    }
+    if (volumeKnob.wasPressed() && WiFi.status() == WL_CONNECTED) {
+      WiFiClient endClient;
+      HTTPClient endRequest;
+      endRequest.setTimeout(3000);
+      if (endRequest.begin(endClient, voiceEndUrl)) {
+        int endStatus = endRequest.POST((uint8_t*)nullptr, 0);
+        if (endStatus == 204) {
+          speaker.playTone(NOTE_C4, 120);
+          Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"voice_conversation_ended\",\"value\":true}}");
+        } else {
+          Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"voice_end_status\",\"value\":%d}}\n", endStatus);
+        }
+        endRequest.end();
+      }
     }
 
     int wifiStatus = WiFi.status();
@@ -241,6 +257,7 @@ code:
     // Hold button 1 to record; releasing it sends the captured speech.
     if (atech_action == "voice_host") {
       voiceApiUrl = "http://" + atech_value + ":8001/api/voice";
+      voiceEndUrl = "http://" + atech_value + ":8001/api/voice/end";
       atechDone();
     }
     unsigned long voiceNow = millis();

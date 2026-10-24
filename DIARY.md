@@ -128,3 +128,9 @@
 - The volume control starts at 70%, adjusts in 10% steps from mute through 80% to avoid the speaker's clipping range, and maps the level to its LED ring.
 - A host-only request with the existing speech fixture returned HTTP 200 and 84,800 bytes of speaker PCM in 2.52 seconds. The old timed pipeline took about 12.45 seconds across its three AI calls, so the one-request path reduced measured host processing by about 80%. Physical board playback remains to be checked after flashing.
 - SDK validation and firmware build passed with the encoder on 10–11 (14.8% static RAM, 32.8% flash). Uploaded successfully to `/dev/cu.usbmodem101`; `atech check` reports the display, speaker, microphone, encoder, and both buttons initialized. Restarted the host bridge with the new model. The SDK cannot electrically detect whether the encoder is plugged in, so turning it after moving the position-12 plug to position 10 is the remaining physical check.
+
+## 2026-10-24 — Voice conversation sessions
+
+- Added host-managed conversation history for four exchanges. Previous user WAV input and assistant text are included in each following `gpt-audio-1.5` request, enabling follow-up questions while keeping the existing one-call audio path.
+- The active session is saved in the ignored local `.voice_session.json` and survives a quick host restart. Pressing the volume encoder calls `POST /api/voice/end`; HTTP 204 clears the session and produces a low confirmation tone. Two minutes without a voice request also clears it automatically.
+- Host verification passed with two generated utterances: after “Remember the number 42,” the follow-up “What number did I ask you to remember?” produced “You asked me to remember 42.” The session file existed after the turns; `POST /api/voice/end` returned 204 and removed it. Validation, firmware build, upload, and `atech check` passed. A physical encoder press still requires the encoder to be wired across valid slots 10–11.
