@@ -5,9 +5,11 @@ import io
 import json
 import os
 import secrets
+import ssl
 import urllib.error
 import urllib.request
 import wave
+from array import array
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -33,6 +35,12 @@ def openai_request(path, data, content_type):
 
 
 def make_wav(pcm):
+    samples = array("h", pcm)
+    peak = max((abs(sample) for sample in samples), default=0)
+    if peak:
+        gain = min(20.0, 16000 / peak)
+        if gain > 1:
+            pcm = array("h", (int(sample * gain) for sample in samples)).tobytes()
     output = io.BytesIO()
     with wave.open(output, "wb") as wav:
         wav.setnchannels(1)
@@ -57,7 +65,7 @@ def assistant_reply(transcript):
     request_body = json.dumps({
         "model": "gpt-6-luna",
         "reasoning": {"effort": "none"},
-        "instructions": "You are a helpful, calm voice assistant for an older adult. Reply in one or two short spoken sentences. Do not claim to have changed devices, medication records, or external data unless a tool actually did so.",
+        "instructions": "You are a helpful, calm voice assistant for an older adult. Reply in one short spoken sentence, under 20 words. Do not claim to have changed devices, medication records, or external data unless a tool actually did so.",
         "input": transcript,
         "max_output_tokens": 100,
     }).encode()
@@ -77,6 +85,7 @@ def create_speech(text):
     request_body = json.dumps({
         "model": "gpt-4o-mini-tts",
         "voice": "coral",
+        "speed": 0.8,
         "input": text[:500],
         "instructions": "Speak clearly, warmly, and at a measured pace.",
         "response_format": "pcm",
@@ -117,6 +126,7 @@ class VoiceHandler(BaseHTTPRequestHandler):
             if len(pcm) != length:
                 self.send_error(400, "Incomplete audio body")
                 return
+            print(f"received audio: {length // 2} samples from {self.client_address[0]}", flush=True)
             form, content_type = multipart_audio(make_wav(pcm))
             transcription = json.loads(openai_request("/audio/transcriptions", form, content_type))
             transcript = transcription.get("text", "").strip()
@@ -132,7 +142,7 @@ class VoiceHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(speech)))
             self.end_headers()
             self.wfile.write(speech)
-        except (urllib.error.URLError, TimeoutError, KeyError, ValueError, RuntimeError) as error:
+        except (urllib.error.URLError, TimeoutError, KeyError, ValueError, RuntimeError, ssl.SSLError) as error:
             print("voice request failed:", error, flush=True)
             self.send_error(502, "Voice model request failed; check host log")
 

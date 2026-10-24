@@ -10,6 +10,7 @@ modules:
 code:
   setup: |
     display.setDirectMode(true);
+    speaker.setVolume(0.7f);
     WiFi.mode(WIFI_STA);
   loop: |
     static bool medsTaken = false;
@@ -18,14 +19,21 @@ code:
     static bool reminderStarted = false;
     static bool pendingApiPost = false;
     static bool wifiScanRunning = false;
+    static bool reminderScheduleActive = false;
+    static bool manualReminderRequested = false;
     static int lastWifiStatus = -1;
     static unsigned long lastReminder = 0;
     static unsigned long lastApiAttempt = 0;
     static unsigned long lastWifiScan = 0;
+    static unsigned long lastSchedulePoll = 0;
+    static unsigned long reminderAtMillis = 0;
+    static char reminderScheduleDay[11] = "";
     static bool voiceRecording = false;
+    static bool voiceManual = false;
+    static bool voiceAutoEnabled = true;
     static unsigned long voiceLastSound = 0;
     static unsigned long voiceCooldown = 0;
-    static String voiceApiUrl = "http://172.20.10.3:8001/api/voice";
+    static String voiceApiUrl = "http://172.20.10.14:8001/api/voice";
 
     int wifiStatus = WiFi.status();
     if (wifiStatus != lastWifiStatus) {
@@ -34,6 +42,28 @@ code:
     }
 
     unsigned long now = millis();
+    if (wifiStatus == WL_CONNECTED && (lastSchedulePoll == 0 || now - lastSchedulePoll >= 30000UL)) {
+      lastSchedulePoll = now;
+      long scheduledEpoch = 0;
+      long serverEpoch = 0;
+      char localDay[11] = "";
+      int scheduleResult = getReminderScheduleFromApi(scheduledEpoch, serverEpoch, localDay);
+      if (scheduleResult == 1) {
+        if (strcmp(reminderScheduleDay, localDay) != 0) {
+          strcpy(reminderScheduleDay, localDay);
+          medsTaken = false;
+          reminderStarted = false;
+          lastReminder = 0;
+          needsRedraw = true;
+        }
+        long secondsUntilReminder = scheduledEpoch - serverEpoch;
+        reminderAtMillis = now + (secondsUntilReminder > 0 ? (unsigned long)secondsUntilReminder * 1000UL : 0UL);
+        reminderScheduleActive = true;
+      } else if (scheduleResult == 0) {
+        reminderScheduleActive = false;
+      }
+    }
+
     if (!wifiScanRunning && wifiStatus != WL_CONNECTED &&
         (lastWifiScan == 0 || now - lastWifiScan >= 10000UL)) {
       WiFi.scanNetworks(true, true);
@@ -74,6 +104,7 @@ code:
       speaker.stop();
       needsRedraw = true;
       reminderStarted = false;
+      manualReminderRequested = true;
       lastReminder = 0;
       Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"state\",\"key\":\"meds_reminder_reset\",\"value\":true}}");
     }
@@ -120,7 +151,8 @@ code:
     }
 
     // Spoken reminder repeats until acknowledged.
-    if (refreshed && !medsTaken && (!reminderStarted || now - lastReminder >= 30000UL)) {
+    bool reminderIsDue = reminderScheduleActive && (long)(now - reminderAtMillis) >= 0;
+    if (refreshed && (reminderIsDue || manualReminderRequested) && !medsTaken && (!reminderStarted || now - lastReminder >= 30000UL)) {
       static const char elevenLabsSpeech[] =
         "AAkAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABCgGQkAEQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGQAAAAAAAAAAAAAAAAAAAAAAAAAAGQCQAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJARkRAhCamQChEQGRmQkbIReywIsLNyL6DEWIoY8wI7uJKkOqGAKeRZiSmwlW2ZgQA6GtGTID+ZwqUYAE0JuJc6qLQhinwJqschKyvJszMPB4ePO6P5I1CAmLQdm0iBAJkw7KGFGDgagRv1AICDQBoYo8rhAYgZQRu6xIAqHLijgMEouMehSSoASBlhkLKEe0sI4oMbGC2wAqBZLSC61hEpG/IRCRixpwpKCoO5hUsCi9QwoGuaQguRDbOSiBiESrrTgmiqs3AZqJCmOS06uZcagV0KwaUQCEvhIooxnbMpwUu6lxgZKAKVMKkCi/gL2IANuQRoERGTIglZDPKxip3QSBmEAYFYCYMIohvsuLvwIXoAgYAwOZIB2Jiuu7l4EASAknqAA4ixiq+qqXkABICAe4CEgIgLzMiQWCiDkKF5EIOAsJvPqaBjSaKQsHAoAoi4uZ+KqAZBgJm4JGEAkLi6ngqJB0KJmooGQYAIqtqqgHuSFZmpO4U0iaGc6YiIeBiUqKlIARUJsJqsCKpVSLKonTIwhQCbypyAiRdCmcqJFFGA"
         "oamsipB5A5eomkkBFRmpuasYmldAmaqbBVGBgKqcirJyMKSqu0AwBwCZu5sYXJcSibsagTcYkLrbCLA3WqCgjABQgoKZ25kAepKGCbsIABYRiLqsCZgnYImwDIhRIIGYrJqJcDClAK2IKAMWCciaChmXJBrYiYkTYYCRnLmgQ3qSkoy5IDAHAJrZiTkoBxGb2BoAJBKguq8JojcoqKmcgVIhkrncC8I2SqCAjIggMQOa+42yREqgAZugSCmUgcoOsAdJmJIaqYI4kYK9PBynIiqgGIyhMUvQ2LN4KqEDGrAAHLIDDi2apyI7oQEbyKNJqenEMU2glCiKoQBLifE4PsCVKAmRAAqwgzuuxhJMiaMwG8EBK7jTaizRlDgKooIaqJEZ66R5G8KEOQmhAAqJoIr0g2yKpCA7sJQpC8KSWwvSgikZsoQ5CZEQGJC4+sAYHsEDWRqiE1sIkoGgLY/AkjqKpCFbgIMxKZEBjNmpjaqoABAycRIFIxChkY662ZmMqaERQEEjNCMEEQm73MmanLmQOpkHUTgDFCCYoYqsyqqruZkagFNiIhNDMhGSmKu9+7mru6ggUBU0QQEDCJnKu8ypigoBI0IyMjIzIYjZy627u6qRMWIyQyQkIRGgyLvrqqvKqAg5QSIzMyQRExGpu8uqm5oQERISERIREQAQkBkBAJmZGRkBkACZAAkAEAABAAAAAAABAAEAAQCRAQEAAAGQAJAJGZCQCQAAEAkAABkAmZGQkaEDGwVfO2teCgjSAhnIx6MQCSlKLggZmOO0oxA6Ppm0MS+J"
@@ -138,12 +170,13 @@ code:
         "q4KtELww+r2ZqqwZcjYyNUQRETMVAYAJgKm7u76828y6vLvLy5qqqamZiYgIEUQkEUM0RDJDMkMyMkMyIzMzIiIBmKq767u7u7vbqyGA28vK28uZCCBTVDQlY0MyJCIiMiEBAJjKzcy7vby8vLvLu7vLqquqmaCrGGI0U0MzQzMzNDI0MzM0QyMjMiIgudGtu9qqipsJGwAzQiG5lygQKbFJghMyGQu5q7mfkRExEDQwBQEasZk7oJIJzamRmiDlGT+vBhe4LZqYIYEHAr0IWxCAUKSQn4ingh5IgZmIEIDhgikcSirZxBQIHAgYsJOAkygtObq2KNGkKho9GuOUsUE/CsKTGBk7mcaCOioawaQg6caDaysaCLDHowFKLJiypDg8CrGjICvQkzmYknocwpKRsqMQfCwJgBi4x5M4Piug1IIYKksK1bOSajsrsKSBGZi0ME8s0aQAGBmJoSFNCsGTSZmCO/DHEj2JkQAZsLWCexvBlFob0pMpiZEQCQigxZM5XSywtJMpCQiASqiisrQBeywYGYrVo4GQACgainlNyMUCOpmzSBvBAlsbwrORw4N8G5CiMD/IpCAswIQqqJN7CqECK7ClABmQe5mzQC3RgzuZpCg8wAQsqKMRK6AoicJBjLUxHoCySAvSEjuatDBL0RhKsJMZLZGCHaIYKuQQOZuVOQqUiSnQgSqQAhCrF4ALojmYsZsIqCc5CuMQW7myYhiguBshAJAZuZOxOhAwCbmiAFGRiAurAVMJkpkbuQEhEKqRmTOQkjurkRExmZEQGhERALAZ"
         "AQAAAAAAAAAAAAAAAAAAAA==";
       #endif
-      static int16_t decodedSpeech[18576];
+      int16_t decodedSpeech[256];
       static const int stepTable[] = {7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143, 157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327, 3660, 4026, 4429, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767};
       static const int indexTable[] = {-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8};
       int predictor = 1;
       int index = 0;
       int sample = 0;
+      int buffered = 0;
       for (int i = 0; elevenLabsSpeech[i] && sample < 18576; i += 4) {
         uint32_t packed = 0;
         for (int j = 0; j < 4; j++) {
@@ -163,15 +196,21 @@ code:
             predictor += code & 8 ? -delta : delta;
             predictor = constrain(predictor, -32768, 32767);
             index = constrain(index + indexTable[code], 0, 88);
-            decodedSpeech[sample++] = predictor;
-            decodedSpeech[sample++] = predictor;
+            decodedSpeech[buffered++] = predictor;
+            decodedSpeech[buffered++] = predictor;
+            sample += 2;
+            if (buffered == 256) {
+              speaker.writeSamples(decodedSpeech, buffered);
+              buffered = 0;
+            }
           }
         }
       }
-      speaker.writeSamples(decodedSpeech, sample);
+      speaker.writeSamples(decodedSpeech, buffered);
       voiceCooldown = millis();
       lastReminder = now;
       reminderStarted = true;
+      manualReminderRequested = false;
       Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"meds_reminder\",\"value\":\"Have you taken your meds?\"}}");
     }
 
@@ -185,18 +224,30 @@ code:
       voiceApiUrl = "http://" + atech_value + ":8001/api/voice";
       atechDone();
     }
+    if (atech_action == "voice_auto") {
+      voiceAutoEnabled = !atech_value.equalsIgnoreCase("false") && atech_value != "off" && atech_value != "0";
+      atechDone();
+    }
     unsigned long voiceNow = millis();
     int16_t voiceLevel = microphone.getSoundLevel();
+    bool voiceRequested = atech_action == "voice_record";
+    if (voiceRequested) atechDone();
     if (!voiceRecording && wifiStatus == WL_CONNECTED &&
-        voiceNow - voiceCooldown >= 8000UL && voiceLevel >= 400 && !speaker.isPlaying()) {
+        (voiceRequested || (voiceAutoEnabled && voiceNow - voiceCooldown >= 8000UL && voiceLevel >= 100 && !speaker.isPlaying()))) {
+      if (voiceRequested) speaker.playTone(NOTE_C5, 100);
       microphone.startRecording();
       voiceRecording = microphone.isRecording();
+      voiceManual = voiceRequested;
       voiceLastSound = voiceNow;
       if (voiceRecording) Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"voice_listening\",\"value\":true}}");
+      else {
+        voiceCooldown = millis();
+        Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"voice_record_failed\",\"value\":%u}}\n", (unsigned)ESP.getMaxAllocHeap());
+      }
     }
     if (voiceRecording) {
-      if (voiceLevel >= 400) voiceLastSound = voiceNow;
-      if (!microphone.isRecording() || voiceNow - voiceLastSound >= 900UL) {
+      if (voiceLevel >= 60) voiceLastSound = voiceNow;
+      if (!microphone.isRecording() || (!voiceManual && voiceNow - voiceLastSound >= 900UL)) {
         microphone.stopRecording();
         voiceRecording = false;
         voiceCooldown = voiceNow;
@@ -212,15 +263,18 @@ code:
             if (voiceStatus == 200) {
               WiFiClient* response = voiceRequest.getStreamPtr();
               int remaining = voiceRequest.getSize();
+              int expectedBytes = remaining;
               int16_t speechChunk[256];
               speaker.stop();
-              while (remaining >= 2 && response->connected()) {
+              response->setTimeout(5000);
+              while (remaining >= 2) {
                 int requestedBytes = min((int)sizeof(speechChunk), remaining) & ~1;
                 int receivedBytes = response->readBytes((char*)speechChunk, requestedBytes);
                 if (receivedBytes <= 0) break;
                 speaker.writeSamples(speechChunk, receivedBytes / sizeof(int16_t));
                 remaining -= receivedBytes;
               }
+              Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"voice_reply_bytes\",\"value\":%d}}\n", expectedBytes - remaining);
               Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"voice_reply_played\",\"value\":%s}}\n", remaining < 2 ? "true" : "false");
             } else {
               Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"voice_api_status\",\"value\":%d}}\n", voiceStatus);
