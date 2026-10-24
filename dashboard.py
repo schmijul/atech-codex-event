@@ -1,10 +1,12 @@
 """Browse the medication database at http://127.0.0.1:8000."""
 
 import json
+import re
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 DATABASE = Path(__file__).with_name('meds_taken.sqlite3')
 PAGE = '''<!doctype html>
@@ -24,6 +26,11 @@ button:disabled{opacity:.4;cursor:default}button:hover:enabled{background:#444}
 .metric{padding:28px;border-right:1px solid #eaeaea}.metric:last-child{border:0}
 .value{font-size:32px;margin-top:14px;letter-spacing:-.03em}.value small{font-size:14px;color:#787774}
 section{background:white;border:1px solid #eaeaea;border-radius:8px;overflow:hidden}
+.schedule{background:white;border:1px solid #eaeaea;border-radius:8px;padding:24px;margin-bottom:24px}
+.schedule form{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin-top:16px}
+.schedule label{display:grid;gap:6px;font-size:12px;color:#787774}
+.schedule input{font:inherit;padding:10px;border:1px solid #ddd;border-radius:4px}
+.schedule-status{font-size:13px;margin:12px 0 0}
 .section-head{padding:24px;display:flex;align-items:center;justify-content:space-between;gap:20px}
 h2{font-size:18px;font-weight:500;margin:0}table{width:100%;border-collapse:collapse;text-align:left}
 th,td{padding:17px 24px;border-top:1px solid #eaeaea}td{font-size:14px}
@@ -35,6 +42,7 @@ footer{display:flex;justify-content:space-between;align-items:center;gap:16px;ma
 <main>
 <header><div><div class="eyebrow">Atech / Home assistant</div><h1>Medication log</h1><p>Button confirmations, recorded as they happen.</p></div><button id="refresh">Refresh</button></header>
 <div id="error" role="status"></div>
+<section class="schedule"><h2>Daily reminder</h2><p>Choose when the board should start its medication reminder. The time uses this browser’s local timezone: <span id="schedule-zone"></span>.</p><form id="schedule-form"><label>Start time<input id="reminder-time" type="time" required></label><button id="save-reminder">Save reminder</button><button id="disable-reminder" type="button">Turn off</button></form><p class="schedule-status" id="schedule-status" role="status">Loading reminder…</p></section>
 <div class="metrics"><div class="metric"><div class="eyebrow">Today</div><div class="value" id="today">—</div></div><div class="metric"><div class="eyebrow">All confirmations</div><div class="value" id="total">—</div></div><div class="metric"><div class="eyebrow">Last recorded</div><div class="value" id="latest">—</div></div></div>
 <section><div class="section-head"><h2>Confirmation history</h2><span class="eyebrow">Newest first</span></div><table><thead><tr><th>ID</th><th>Date & time</th><th>Event</th></tr></thead><tbody id="rows"></tbody></table><div id="empty" hidden>No confirmations yet. Start the logger and press the medication button to record one.</div></section>
 <footer><span id="status">Reading meds_taken.sqlite3…</span><div class="controls"><button id="prev">Previous</button><button id="next">Next</button></div></footer>
@@ -45,7 +53,8 @@ let events=[], page=0;
 const size=50, el=id=>document.getElementById(id);
 const date=value=>new Date(value);
 const sameDay=(a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate();
-el('zone').textContent=Intl.DateTimeFormat().resolvedOptions().timeZone;
+const timeZone=Intl.DateTimeFormat().resolvedOptions().timeZone;
+el('zone').textContent=timeZone;el('schedule-zone').textContent=timeZone;
 function render(){
  const now=new Date();
  el('today').textContent=events.filter(e=>sameDay(date(e.taken_at_utc),now)).length;
@@ -72,15 +81,61 @@ async function refresh(){
  }catch(error){el('error').textContent='Could not read the database: '+error.message;el('status').textContent='Update failed · Retrying every 5s';}
  finally{el('refresh').disabled=false;}
 }
+async function loadReminder(){
+ try{
+  const response=await fetch('/api/reminder',{cache:'no-store'}),data=await response.json();
+  if(!response.ok)throw Error(data.error);
+  if(data.enabled){el('reminder-time').value=data.time;el('schedule-status').textContent='Daily reminder starts at '+data.time+' ('+data.timezone+').';}
+  else el('schedule-status').textContent='No daily reminder is scheduled.';
+ }catch(error){el('schedule-status').textContent='Could not load reminder: '+error.message;}
+}
+el('schedule-form').onsubmit=async event=>{
+ event.preventDefault();el('save-reminder').disabled=true;
+ try{
+  const response=await fetch('/api/reminder',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({time:el('reminder-time').value,timezone:timeZone})});
+  const data=await response.json();if(!response.ok)throw Error(data.error);
+  el('schedule-status').textContent='Daily reminder starts at '+data.time+' ('+data.timezone+').';
+ }catch(error){el('schedule-status').textContent='Could not save reminder: '+error.message;}
+ finally{el('save-reminder').disabled=false;}
+};
+el('disable-reminder').onclick=async()=>{
+ el('disable-reminder').disabled=true;
+ try{const response=await fetch('/api/reminder',{method:'DELETE'}),data=await response.json();if(!response.ok)throw Error(data.error);el('schedule-status').textContent='No daily reminder is scheduled.';}
+ catch(error){el('schedule-status').textContent='Could not turn off reminder: '+error.message;}
+ finally{el('disable-reminder').disabled=false;}
+};
 el('refresh').onclick=refresh;
 el('prev').onclick=()=>{page--;render()};el('next').onclick=()=>{page++;render()};
-refresh();setInterval(refresh,5000);
+refresh();loadReminder();setInterval(refresh,5000);
 </script>
 </html>'''
 
 
 class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
+        if self.path == '/api/reminder':
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 0 < length <= 4096 or self.headers.get_content_type() != 'application/json':
+                    raise ValueError('Send a JSON object with time and timezone.')
+                data = json.loads(self.rfile.read(length))
+                if not isinstance(data, dict) or set(data) != {'time', 'timezone'}:
+                    raise ValueError('Expected time and timezone.')
+                if not isinstance(data['time'], str) or not re.fullmatch(r'\d{2}:\d{2}', data['time']):
+                    raise ValueError('time must use HH:MM format.')
+                reminder_time = time.fromisoformat(data['time'])
+                if not isinstance(data['timezone'], str):
+                    raise ValueError('timezone must be an IANA timezone name.')
+                ZoneInfo(data['timezone'])
+                with sqlite3.connect(DATABASE) as db:
+                    db.execute('INSERT INTO dashboard_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', ('reminder_time', reminder_time.strftime('%H:%M')))
+                    db.execute('INSERT INTO dashboard_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', ('reminder_timezone', data['timezone']))
+                self.send_json(200, {'enabled': True, 'time': reminder_time.strftime('%H:%M'), 'timezone': data['timezone']})
+            except (ValueError, UnicodeDecodeError, ZoneInfoNotFoundError) as error:
+                self.send_json(400, {'error': str(error)})
+            except sqlite3.Error:
+                self.send_json(503, {'error': 'Database unavailable.'})
+            return
         if self.path != '/api/events':
             self.send_error(404)
             return
@@ -110,6 +165,17 @@ class Handler(BaseHTTPRequestHandler):
         except sqlite3.Error:
             self.send_json(503, {'error': 'Database unavailable. Try again shortly.'})
 
+    def do_DELETE(self):
+        if self.path != '/api/reminder':
+            self.send_error(404)
+            return
+        try:
+            with sqlite3.connect(DATABASE) as db:
+                db.execute("DELETE FROM dashboard_settings WHERE key IN ('reminder_time', 'reminder_timezone')")
+            self.send_json(200, {'enabled': False})
+        except sqlite3.Error:
+            self.send_json(503, {'error': 'Database unavailable.'})
+
     def send_json(self, status, data):
         body = json.dumps(data).encode()
         self.send_response(status)
@@ -122,6 +188,33 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/':
             body, content_type, status = PAGE.encode(), 'text/html; charset=utf-8', 200
+        elif self.path == '/api/reminder':
+            try:
+                with sqlite3.connect(DATABASE.as_uri() + '?mode=ro', uri=True) as db:
+                    settings = dict(db.execute("SELECT key, value FROM dashboard_settings WHERE key IN ('reminder_time', 'reminder_timezone')"))
+                if 'reminder_time' in settings and 'reminder_timezone' in settings:
+                    body = json.dumps({'enabled': True, 'time': settings['reminder_time'], 'timezone': settings['reminder_timezone']}).encode()
+                else:
+                    body = json.dumps({'enabled': False}).encode()
+                status = 200
+            except sqlite3.Error:
+                body, status = json.dumps({'error': 'Database unavailable.'}).encode(), 503
+            content_type = 'application/json'
+        elif self.path == '/api/reminder/next':
+            try:
+                with sqlite3.connect(DATABASE.as_uri() + '?mode=ro', uri=True) as db:
+                    settings = dict(db.execute("SELECT key, value FROM dashboard_settings WHERE key IN ('reminder_time', 'reminder_timezone')"))
+                if 'reminder_time' not in settings or 'reminder_timezone' not in settings:
+                    body = b'disabled'
+                else:
+                    now_utc = datetime.now(timezone.utc)
+                    local_now = now_utc.astimezone(ZoneInfo(settings['reminder_timezone']))
+                    scheduled_local = datetime.combine(local_now.date(), time.fromisoformat(settings['reminder_time']), ZoneInfo(settings['reminder_timezone']))
+                    body = f'{int(scheduled_local.timestamp())}|{int(now_utc.timestamp())}|{local_now.date().isoformat()}'.encode()
+                status = 200
+            except (sqlite3.Error, ValueError, ZoneInfoNotFoundError):
+                body, status = b'Unable to read reminder schedule.', 503
+            content_type = 'text/plain; charset=utf-8'
         elif self.path == '/api/events':
             try:
                 # Read-only connections let the serial logger keep writing independently.
@@ -148,6 +241,7 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == '__main__':
     with sqlite3.connect(DATABASE) as db:
         db.execute('CREATE TABLE IF NOT EXISTS medication_events (id INTEGER PRIMARY KEY, taken_at_utc TEXT NOT NULL)')
+        db.execute('CREATE TABLE IF NOT EXISTS dashboard_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
     print('Dashboard and API listening on all network interfaces, port 8000', flush=True)
     try:
         ThreadingHTTPServer(('0.0.0.0', 8000), Handler).serve_forever()

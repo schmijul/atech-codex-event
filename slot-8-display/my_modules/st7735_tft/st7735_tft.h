@@ -40,6 +40,23 @@ static inline int postMedsTakenToApi() {
     return status;
 }
 
+static inline int getReminderScheduleFromApi(long &scheduledEpoch, long &serverEpoch, char *localDay) {
+    WiFiClient client;
+    HTTPClient request;
+    request.setTimeout(3000);
+    if (!request.begin(client, "http://172.20.10.5:8000/api/reminder/next")) return -1000;
+    int status = request.GET();
+    if (status != 200) {
+        request.end();
+        return status;
+    }
+    String body = request.getString();
+    request.end();
+    if (body == "disabled") return 0;
+    if (sscanf(body.c_str(), "%ld|%ld|%10s", &scheduledEpoch, &serverEpoch, localDay) == 3) return 1;
+    return -1001;
+}
+
 class ST7735_TFT {
 public:
     // Color constants (RGB565)

@@ -176,6 +176,7 @@ void setup() {
 
     // ---- user setup ----
     display.setDirectMode(true);
+    WiFi.mode(WIFI_STA);
 
     // ---- atech boot diagnostics (read by `atech check`) ----
     {
@@ -240,13 +241,80 @@ void loop() {
     static bool needsRedraw = true;
     static bool refreshed = false;
     static bool reminderStarted = false;
+    static bool pendingApiPost = false;
+    static bool wifiScanRunning = false;
+    static bool reminderScheduleActive = false;
+    static bool manualReminderRequested = false;
+    static int lastWifiStatus = -1;
     static unsigned long lastReminder = 0;
+    static unsigned long lastApiAttempt = 0;
+    static unsigned long lastWifiScan = 0;
+    static unsigned long lastSchedulePoll = 0;
+    static unsigned long reminderAtMillis = 0;
+    static char reminderScheduleDay[11] = "";
+
+    int wifiStatus = WiFi.status();
+    if (wifiStatus != lastWifiStatus) {
+      lastWifiStatus = wifiStatus;
+      Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"wifi_status\",\"value\":%d}}\n", wifiStatus);
+    }
+
+    unsigned long now = millis();
+    if (wifiStatus == WL_CONNECTED && (lastSchedulePoll == 0 || now - lastSchedulePoll >= 30000UL)) {
+      lastSchedulePoll = now;
+      long scheduledEpoch = 0;
+      long serverEpoch = 0;
+      char localDay[11] = "";
+      int scheduleResult = getReminderScheduleFromApi(scheduledEpoch, serverEpoch, localDay);
+      if (scheduleResult == 1) {
+        if (strcmp(reminderScheduleDay, localDay) != 0) {
+          strcpy(reminderScheduleDay, localDay);
+          medsTaken = false;
+          reminderStarted = false;
+          lastReminder = 0;
+          needsRedraw = true;
+        }
+        long secondsUntilReminder = scheduledEpoch - serverEpoch;
+        reminderAtMillis = now + (secondsUntilReminder > 0 ? (unsigned long)secondsUntilReminder * 1000UL : 0UL);
+        reminderScheduleActive = true;
+      } else if (scheduleResult == 0) {
+        reminderScheduleActive = false;
+      }
+    }
+
+    if (!wifiScanRunning && wifiStatus != WL_CONNECTED &&
+        (lastWifiScan == 0 || now - lastWifiScan >= 10000UL)) {
+      WiFi.scanNetworks(true, true);
+      wifiScanRunning = true;
+      lastWifiScan = now;
+    }
+    if (wifiScanRunning) {
+      int networksFound = WiFi.scanComplete();
+      if (networksFound >= 0) {
+        String matchingSsid;
+        for (int i = 0; i < networksFound; i++) {
+          String visibleSsid = WiFi.SSID(i);
+          if (visibleSsid.equalsIgnoreCase(WIFI_SSID)) {
+            matchingSsid = visibleSsid;
+            break;
+          }
+        }
+        Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"wifi_scan\",\"value\":{\"networks\":%d,\"target_visible\":%s}}}\n",
+          networksFound, matchingSsid.length() ? "true" : "false");
+        WiFi.scanDelete();
+        wifiScanRunning = false;
+        if (matchingSsid.length()) WiFi.begin(matchingSsid.c_str(), WIFI_PASSWORD);
+      } else if (networksFound == -2) {
+        wifiScanRunning = false;
+      }
+    }
 
     if (button.wasPressed() && !medsTaken) {
       medsTaken = true;
       speaker.stop();
       needsRedraw = true;
-      Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"state\",\"key\":\"meds_taken\",\"value\":true}}");
+      pendingApiPost = true;
+      Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"meds_button\",\"value\":true}}");
     }
 
     if (resetButton.wasPressed()) {
@@ -254,8 +322,28 @@ void loop() {
       speaker.stop();
       needsRedraw = true;
       reminderStarted = false;
+      manualReminderRequested = true;
       lastReminder = 0;
       Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"state\",\"key\":\"meds_reminder_reset\",\"value\":true}}");
+    }
+
+    if (pendingApiPost && wifiStatus == WL_CONNECTED && now - lastApiAttempt >= 5000UL) {
+      lastApiAttempt = now;
+      int apiStatus = postMedsTakenToApi();
+      if (apiStatus == 201) {
+        pendingApiPost = false;
+        Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"meds_api_saved\",\"value\":true}}");
+      } else if (apiStatus == 503 || apiStatus == -1000) {
+        // The server says it could not save, or the request did not start; retry later.
+      } else if (apiStatus < 0) {
+        // No response is ambiguous: the server may have saved it before the timeout.
+        // Do not retry; inspect GET /api/events before any manual retry.
+        pendingApiPost = false;
+        Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"meds_api_uncertain\",\"value\":true}}");
+      } else {
+        pendingApiPost = false;
+        Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"meds_api_rejected\",\"value\":%d}}\n", apiStatus);
+      }
     }
 
     // Preserve the delayed refresh that worked with this display.
@@ -281,8 +369,8 @@ void loop() {
     }
 
     // Spoken reminder repeats until acknowledged.
-    unsigned long now = millis();
-    if (refreshed && !medsTaken && (!reminderStarted || now - lastReminder >= 30000UL)) {
+    bool reminderIsDue = reminderScheduleActive && (long)(now - reminderAtMillis) >= 0;
+    if (refreshed && (reminderIsDue || manualReminderRequested) && !medsTaken && (!reminderStarted || now - lastReminder >= 30000UL)) {
       static const char elevenLabsSpeech[] =
         "AAkAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABCgGQkAEQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGQAAAAAAAAAAAAAAAAAAAAAAAAAAGQCQAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJARkRAhCamQChEQGRmQkbIReywIsLNyL6DEWIoY8wI7uJKkOqGAKeRZiSmwlW2ZgQA6GtGTID+ZwqUYAE0JuJc6qLQhinwJqschKyvJszMPB4ePO6P5I1CAmLQdm0iBAJkw7KGFGDgagRv1AICDQBoYo8rhAYgZQRu6xIAqHLijgMEouMehSSoASBlhkLKEe0sI4oMbGC2wAqBZLSC61hEpG/IRCRixpwpKCoO5hUsCi9QwoGuaQguRDbOSiBiESrrTgmiqs3AZqJCmOS06uZcagV0KwaUQCEvhIooxnbMpwUu6lxgZKAKVMKkCi/gL2IANuQRoERGTIglZDPKxip3QSBmEAYFYCYMIohvsuLvwIXoAgYAwOZIB2Jiuu7l4EASAknqAA4ixiq+qqXkABICAe4CEgIgLzMiQWCiDkKF5EIOAsJvPqaBjSaKQsHAoAoi4uZ+KqAZBgJm4JGEAkLi6ngqJB0KJmooGQYAIqtqqgHuSFZmpO4U0iaGc6YiIeBiUqKlIARUJsJqsCKpVSLKonTIwhQCbypyAiRdCmcqJFFGA"
         "oamsipB5A5eomkkBFRmpuasYmldAmaqbBVGBgKqcirJyMKSqu0AwBwCZu5sYXJcSibsagTcYkLrbCLA3WqCgjABQgoKZ25kAepKGCbsIABYRiLqsCZgnYImwDIhRIIGYrJqJcDClAK2IKAMWCciaChmXJBrYiYkTYYCRnLmgQ3qSkoy5IDAHAJrZiTkoBxGb2BoAJBKguq8JojcoqKmcgVIhkrncC8I2SqCAjIggMQOa+42yREqgAZugSCmUgcoOsAdJmJIaqYI4kYK9PBynIiqgGIyhMUvQ2LN4KqEDGrAAHLIDDi2apyI7oQEbyKNJqenEMU2glCiKoQBLifE4PsCVKAmRAAqwgzuuxhJMiaMwG8EBK7jTaizRlDgKooIaqJEZ66R5G8KEOQmhAAqJoIr0g2yKpCA7sJQpC8KSWwvSgikZsoQ5CZEQGJC4+sAYHsEDWRqiE1sIkoGgLY/AkjqKpCFbgIMxKZEBjNmpjaqoABAycRIFIxChkY662ZmMqaERQEEjNCMEEQm73MmanLmQOpkHUTgDFCCYoYqsyqqruZkagFNiIhNDMhGSmKu9+7mru6ggUBU0QQEDCJnKu8ypigoBI0IyMjIzIYjZy627u6qRMWIyQyQkIRGgyLvrqqvKqAg5QSIzMyQRExGpu8uqm5oQERISERIREQAQkBkBAJmZGRkBkACZAAkAEAABAAAAAAABAAEAAQCRAQEAAAGQAJAJGZCQCQAAEAkAABkAmZGQkaEDGwVfO2teCgjSAhnIx6MQCSlKLggZmOO0oxA6Ppm0MS+J"
@@ -292,12 +380,14 @@ void loop() {
         "y7u6u8u6vMzbu7ybCUE1NUQyMyQiEYCpy6ysu7qry7q8vczLupsIUkQ0NCQzMiISgLm9vLy7uru6u8zL68u7u4pDVDREMkMiIxGBqdu826qqmpmZmJm6zby9y5oYUzVEQzIzMyMRqeu8y7u7qpqJiZipy73Nu7yZKFRENEMzMyQSEZi6vcy6u7u6u7urrLvbvMurmjBHVENDMjMiIgC6us28y7u7u7urigkQMlMiM1EyNVIjJkIjJkEhEoKBq83Mysu7y6qrCQgyc0NDNEIyMhKCkNm8vbzLqruqCTl+ecOAABEAERSEmbgBG5+qiYuJgBITJzMjKIELrUz5AYAICLgQHJjUEioYOkJJWJCBAfIZPIsJ01wrGxrJxaMIoSEQT4hcGhiJpLIRwqUgi3lLmaIxHZAYwUH6pZACi4KCP5kCGhEeiNajEBksOB6wlRAsKJmUmCCYgk+5AiC6WKnD0xLzs5J8CrExqhHBabmVkAAwP7mUgQkQAIqAUD8uCLGSAZmVTQg6CpCRSgrkk5mGKymoo7Q4+acAGAog6CIuGbCTsJYACoEQwXuJsKcoCCqolKAQwiDZBYnRIVssiJiTkKLzEluMtQErGCC6esGiARuXsLQYs6BCDF3RAhkZmqWAwpICPahYGhqR8pEiWwswrLU4EB0oHgKrYSuQiDgsaoyjo6HEiIVcCpABGhDIk9QBiAjikxiICNUhHAkIEvEg0QAoT4mIgTiZwpUZqJI5SUsrCsg1j4LTAahIi5UZCCmAuMbTAyw6qIS5g1AvgCmIqmI8C5GCsJJ6"
         "PTu4JA2AsoKRTAmwEk4JkcIIBA2CGVwbgNNIiAmQgSEeKQgeAADzggkq0wjEAgoAsMeSELAiLluoIKABqZDHMotcoCihmrR5KisBims8mOMCoCg6KorEaggLMSzTsbUhmoCyJQ6Ioac4PJqTOlsKibeitAEbwgMbOMojDErIhrkEwbLGQBsasQSJoKYQiZAAEUotCrGkPSHggsgDDJUZADqgXAqgpAhJiYGq9ZUZoQIJq4cYGyCIkPOTSk2alokQmIKKESvI40EpmdKRlSsBKYkQPegiiBmphOMQCbK6cnuYsghNsBAQEYqaLaGjUSvTmDgNQAmDiS7hlKFpmRO5OukEmFmiiMlJGQGBwAG5Eao4hyjbIQQqnpAGChCIlcoQKLMREAz4GTgRiyUfsbA4MJiieKqljBFJkogg+znJJpkpmSG5TLKECQ6DkyoMOaQcKRSQrAqhc7EhsIvKmSYhkp6zDRAoFaA7g7r5OzSTkK1AvIgYR5CaqSqFGAQZsayaUDWIuJuIqnMiA66qmUGCQJOsmis3malJBLgKChWrMCUBy6mqMVEluridAJllEpC8iQJJghmynKAKQhGQsCHLkxAkmSEAqZEaEZEZuRmZCQEQkRqSABEJEZAAAAEAAZkBkBAAAACZkAKQAAABGRkAAAAAAAAZCQEAAAAAAJAQAAAAABkJEAAZAAkQGQAZkAEAGRmQAAEJAQCQAQCQAAEJkQEAAJAAAQAZkAEACQGQkRAZAJAQGQAAAAAAGZABAAkBAAAAEJmRABAAAAkBkJEQkAGQEAAAAAAA"
         "kJEBABkZAAAACQEAAAAAAAAZAACQEACQkRAAAAkBAACQAQAZCZEBABkAAAAZGZCRAQAAkAEAAJABAACQkQEAGZABAAkQkQAZGQCQAQAAAAAAAAAAAJEAAAAAAAAAAAAAAAAAAAAAABCQAAAAAJCRAQAAGRAJkAEAAAAAAAAAAAAAGQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACRABAJAAAAABAJAAAAGQAZGQAAAACRAAAAkQAAAAAAAAAAkAEAAAAAAAAAAAAAEAkAAAAAAAAAAAAAGQAAAAAAAACQAQAAAAAAAAAAAAAAAAAAAAAAABmRAAAQmQGQAQCQEAAAAAABCQAAABkAAAAAAAAAAAAAAAAAAAAAAAAAABkAAAAAAAAAAAAAkAEAAAAAAAAAAACQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJABAAAAAZGQABAJAAEJAAAAEAkAAJEAGQCRAJEAAAAAAAAAAAEJAAAQGQkAAAAQCQAAkQCRAAAAAAAAAAAAABAJAAAQCQAAAAAAAAAAABkAAAAAAAAAAAAAAAAAkACZCRCQ";
+      #if 0  // Superseded by the ElevenLabs clip above.
       static const char reminderSpeech[] =
         "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"
         "AQAAAAAAAAAAAAAAAAAAAA==";
+      #endif
       static int16_t decodedSpeech[18576];
       static const int stepTable[] = {7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143, 157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327, 3660, 4026, 4429, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767};
       static const int indexTable[] = {-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8};
@@ -331,6 +421,7 @@ void loop() {
       speaker.writeSamples(decodedSpeech, sample);
       lastReminder = now;
       reminderStarted = true;
+      manualReminderRequested = false;
       Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"meds_reminder\",\"value\":\"Have you taken your meds?\"}}");
     }
 

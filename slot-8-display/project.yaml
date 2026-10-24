@@ -17,10 +17,15 @@ code:
     static bool reminderStarted = false;
     static bool pendingApiPost = false;
     static bool wifiScanRunning = false;
+    static bool reminderScheduleActive = false;
+    static bool manualReminderRequested = false;
     static int lastWifiStatus = -1;
     static unsigned long lastReminder = 0;
     static unsigned long lastApiAttempt = 0;
     static unsigned long lastWifiScan = 0;
+    static unsigned long lastSchedulePoll = 0;
+    static unsigned long reminderAtMillis = 0;
+    static char reminderScheduleDay[11] = "";
 
     int wifiStatus = WiFi.status();
     if (wifiStatus != lastWifiStatus) {
@@ -29,6 +34,28 @@ code:
     }
 
     unsigned long now = millis();
+    if (wifiStatus == WL_CONNECTED && (lastSchedulePoll == 0 || now - lastSchedulePoll >= 30000UL)) {
+      lastSchedulePoll = now;
+      long scheduledEpoch = 0;
+      long serverEpoch = 0;
+      char localDay[11] = "";
+      int scheduleResult = getReminderScheduleFromApi(scheduledEpoch, serverEpoch, localDay);
+      if (scheduleResult == 1) {
+        if (strcmp(reminderScheduleDay, localDay) != 0) {
+          strcpy(reminderScheduleDay, localDay);
+          medsTaken = false;
+          reminderStarted = false;
+          lastReminder = 0;
+          needsRedraw = true;
+        }
+        long secondsUntilReminder = scheduledEpoch - serverEpoch;
+        reminderAtMillis = now + (secondsUntilReminder > 0 ? (unsigned long)secondsUntilReminder * 1000UL : 0UL);
+        reminderScheduleActive = true;
+      } else if (scheduleResult == 0) {
+        reminderScheduleActive = false;
+      }
+    }
+
     if (!wifiScanRunning && wifiStatus != WL_CONNECTED &&
         (lastWifiScan == 0 || now - lastWifiScan >= 10000UL)) {
       WiFi.scanNetworks(true, true);
@@ -69,6 +96,7 @@ code:
       speaker.stop();
       needsRedraw = true;
       reminderStarted = false;
+      manualReminderRequested = true;
       lastReminder = 0;
       Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"state\",\"key\":\"meds_reminder_reset\",\"value\":true}}");
     }
@@ -115,7 +143,8 @@ code:
     }
 
     // Spoken reminder repeats until acknowledged.
-    if (refreshed && !medsTaken && (!reminderStarted || now - lastReminder >= 30000UL)) {
+    bool reminderIsDue = reminderScheduleActive && (long)(now - reminderAtMillis) >= 0;
+    if (refreshed && (reminderIsDue || manualReminderRequested) && !medsTaken && (!reminderStarted || now - lastReminder >= 30000UL)) {
       static const char elevenLabsSpeech[] =
         "AAkAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABCgGQkAEQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGQAAAAAAAAAAAAAAAAAAAAAAAAAAGQCQAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJARkRAhCamQChEQGRmQkbIReywIsLNyL6DEWIoY8wI7uJKkOqGAKeRZiSmwlW2ZgQA6GtGTID+ZwqUYAE0JuJc6qLQhinwJqschKyvJszMPB4ePO6P5I1CAmLQdm0iBAJkw7KGFGDgagRv1AICDQBoYo8rhAYgZQRu6xIAqHLijgMEouMehSSoASBlhkLKEe0sI4oMbGC2wAqBZLSC61hEpG/IRCRixpwpKCoO5hUsCi9QwoGuaQguRDbOSiBiESrrTgmiqs3AZqJCmOS06uZcagV0KwaUQCEvhIooxnbMpwUu6lxgZKAKVMKkCi/gL2IANuQRoERGTIglZDPKxip3QSBmEAYFYCYMIohvsuLvwIXoAgYAwOZIB2Jiuu7l4EASAknqAA4ixiq+qqXkABICAe4CEgIgLzMiQWCiDkKF5EIOAsJvPqaBjSaKQsHAoAoi4uZ+KqAZBgJm4JGEAkLi6ngqJB0KJmooGQYAIqtqqgHuSFZmpO4U0iaGc6YiIeBiUqKlIARUJsJqsCKpVSLKonTIwhQCbypyAiRdCmcqJFFGA"
         "oamsipB5A5eomkkBFRmpuasYmldAmaqbBVGBgKqcirJyMKSqu0AwBwCZu5sYXJcSibsagTcYkLrbCLA3WqCgjABQgoKZ25kAepKGCbsIABYRiLqsCZgnYImwDIhRIIGYrJqJcDClAK2IKAMWCciaChmXJBrYiYkTYYCRnLmgQ3qSkoy5IDAHAJrZiTkoBxGb2BoAJBKguq8JojcoqKmcgVIhkrncC8I2SqCAjIggMQOa+42yREqgAZugSCmUgcoOsAdJmJIaqYI4kYK9PBynIiqgGIyhMUvQ2LN4KqEDGrAAHLIDDi2apyI7oQEbyKNJqenEMU2glCiKoQBLifE4PsCVKAmRAAqwgzuuxhJMiaMwG8EBK7jTaizRlDgKooIaqJEZ66R5G8KEOQmhAAqJoIr0g2yKpCA7sJQpC8KSWwvSgikZsoQ5CZEQGJC4+sAYHsEDWRqiE1sIkoGgLY/AkjqKpCFbgIMxKZEBjNmpjaqoABAycRIFIxChkY662ZmMqaERQEEjNCMEEQm73MmanLmQOpkHUTgDFCCYoYqsyqqruZkagFNiIhNDMhGSmKu9+7mru6ggUBU0QQEDCJnKu8ypigoBI0IyMjIzIYjZy627u6qRMWIyQyQkIRGgyLvrqqvKqAg5QSIzMyQRExGpu8uqm5oQERISERIREQAQkBkBAJmZGRkBkACZAAkAEAABAAAAAAABAAEAAQCRAQEAAAGQAJAJGZCQCQAAEAkAABkAmZGQkaEDGwVfO2teCgjSAhnIx6MQCSlKLggZmOO0oxA6Ppm0MS+J"
@@ -166,6 +195,7 @@ code:
       speaker.writeSamples(decodedSpeech, sample);
       lastReminder = now;
       reminderStarted = true;
+      manualReminderRequested = false;
       Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"meds_reminder\",\"value\":\"Have you taken your meds?\"}}");
     }
 

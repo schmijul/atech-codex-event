@@ -61,6 +61,16 @@ confirmations, the total, the latest timestamp, and history in pages of 50.
 Dates use your browser's timezone. No additional Python packages are required.
 Stop the server with Ctrl-C.
 
+### Daily reminder time
+
+In the dashboard, choose a time and save it to schedule the board's daily spoken
+reminder. The browser's IANA timezone is saved with the time, including daylight
+saving changes. The board checks for schedule updates every 30 seconds and starts
+the reminder at that local time; it repeats every 30 seconds until the meds-taken
+button is pressed. A new local day clears the board's taken state. Use **Turn off**
+to disable the schedule. Restart `dashboard.py` after updating it so the new
+`/api/reminder` endpoints and settings table are available.
+
 ## Wi-Fi write API
 
 The dashboard server listens on all network interfaces on port 8000. Devices

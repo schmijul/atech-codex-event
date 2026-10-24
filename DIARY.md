@@ -1,5 +1,16 @@
 # Development diary
 
+## 2026-10-24 — Dashboard reminder schedule
+
+- User asked to set the daily reminder start time from the dashboard and separately delegated microphone input research for ports 5–6 to an isolated subagent branch.
+- Current dashboard only reads the confirmation history; the firmware starts speaking immediately after display initialization. The schedule must persist in SQLite and be read by the board over the existing Wi-Fi API.
+- Plan: save a local wall-clock time plus IANA timezone in a small settings table; expose a read-only endpoint that returns today's scheduled UTC epoch and server epoch, so ESP32 timing needs no separate NTP dependency. Firmware will poll, wait until the scheduled instant, then run the existing reminder loop.
+- Added dashboard controls to save or disable a daily reminder. The new `dashboard_settings` table stores `HH:MM` and the browser's IANA timezone; `/api/reminder` reads/writes settings and `/api/reminder/next` returns the scheduled instant, current server epoch, and local date. The server creates the settings table at startup, so its running process must be restarted to serve these endpoints.
+- Updated firmware source (not generated `build/` output) to poll the schedule over Wi-Fi every 30 seconds, start the existing spoken/repeating reminder at the scheduled time, clear the taken state when the configured local date changes, and keep slot-1 manual reset behavior. It relies on the server's epoch, not external NTP.
+- Updated slot project documentation. The running API at 172.20.10.5 is still serving its previous process version; its GET `/api/events` works, but `/api/reminder` currently is not deployed. No settings or medication confirmation rows have been written as part of this implementation.
+- `atech validate .` passed and `atech build .` compiled the firmware (25.6% RAM, 32.3% flash). The first validate invocation used the wrong relative venv path; corrected it to `../.venv/bin` from the project directory. Python bytecode compilation also succeeded. Firmware has not been flashed because the API host has not loaded the new schedule endpoints yet.
+- Microphone subagent completed on isolated branch `codex/microphone-input` in `/tmp/atech-microphone-input`. The Atech SDK microphone module supports PCM recording/capture and sound-level readings on ports 5–6, but has no speech-to-text API; its branch adds the microphone module and level-event proof of concept. Validation/build passed there; no flash or API writes.
+
 ## 2026-10-24 — Medication reminder
 
 - Request: display “Have you taken your meds?”, play a reminder sound, and show “Meds taken” after a button press.
