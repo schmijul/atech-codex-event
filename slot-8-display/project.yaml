@@ -29,10 +29,8 @@ code:
     static unsigned long reminderAtMillis = 0;
     static char reminderScheduleDay[11] = "";
     static bool voiceRecording = false;
-    static bool voiceManual = false;
-    static bool voiceAutoEnabled = true;
-    static unsigned long voiceLastSound = 0;
-    static unsigned long voiceCooldown = 0;
+    static bool voiceButtonStartPending = false;
+    static bool voiceStopRequested = false;
     static String voiceApiUrl = "http://172.20.10.14:8001/api/voice";
 
     int wifiStatus = WiFi.status();
@@ -100,13 +98,16 @@ code:
     }
 
     if (resetButton.wasPressed()) {
-      medsTaken = false;
-      speaker.stop();
-      needsRedraw = true;
-      reminderStarted = false;
-      manualReminderRequested = true;
-      lastReminder = 0;
-      Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"state\",\"key\":\"meds_reminder_reset\",\"value\":true}}");
+      if (wifiStatus == WL_CONNECTED) {
+        voiceButtonStartPending = true;
+      } else {
+        Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"voice_button_no_wifi\",\"value\":true}}");
+      }
+    }
+    if (resetButton.wasReleased() && voiceRecording) {
+      microphone.stopRecording();
+      voiceStopRequested = true;
+      Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"voice_button_stop\",\"value\":true}}");
     }
 
     if (pendingApiPost && wifiStatus == WL_CONNECTED && now - lastApiAttempt >= 5000UL) {
@@ -145,7 +146,8 @@ code:
         display.displayText("Have you", 32, 8, 2, ST7735_TFT::COLOR_WHITE);
         display.displayText("taken your", 20, 28, 2, ST7735_TFT::COLOR_WHITE);
         display.displayText("meds?", 50, 48, 2, ST7735_TFT::COLOR_YELLOW);
-        display.displayText("Press button when taken", 11, 70, 1, ST7735_TFT::COLOR_WHITE);
+        display.displayText("Button 9: meds taken", 11, 70, 1, ST7735_TFT::COLOR_WHITE);
+        display.displayText("Button 1: hold to talk", 9, 86, 1, ST7735_TFT::COLOR_WHITE);
       }
       needsRedraw = false;
     }
@@ -207,7 +209,6 @@ code:
         }
       }
       speaker.writeSamples(decodedSpeech, buffered);
-      voiceCooldown = millis();
       lastReminder = now;
       reminderStarted = true;
       manualReminderRequested = false;
@@ -219,40 +220,31 @@ code:
       atechDone();
     }
 
-    // Hands-free short utterances: begin on speech level, then stop after quiet.
+    // Hold button 1 to record; releasing it sends the captured speech.
     if (atech_action == "voice_host") {
       voiceApiUrl = "http://" + atech_value + ":8001/api/voice";
       atechDone();
     }
-    if (atech_action == "voice_auto") {
-      voiceAutoEnabled = !atech_value.equalsIgnoreCase("false") && atech_value != "off" && atech_value != "0";
-      atechDone();
-    }
     unsigned long voiceNow = millis();
-    int16_t voiceLevel = microphone.getSoundLevel();
-    bool voiceRequested = atech_action == "voice_record";
-    if (voiceRequested) atechDone();
-    if (!voiceRecording && wifiStatus == WL_CONNECTED &&
-        (voiceRequested || (voiceAutoEnabled && voiceNow - voiceCooldown >= 8000UL && voiceLevel >= 100 && !speaker.isPlaying()))) {
-      if (voiceRequested) speaker.playTone(NOTE_C5, 100);
+    bool voiceRequested = atech_action == "voice_record" || voiceButtonStartPending;
+    if (atech_action == "voice_record") atechDone();
+    if (!voiceRecording && wifiStatus == WL_CONNECTED && voiceRequested) {
+      voiceButtonStartPending = false;
+      speaker.playTone(NOTE_C5, 100);
       microphone.startRecording();
       voiceRecording = microphone.isRecording();
-      voiceManual = voiceRequested;
-      voiceLastSound = voiceNow;
       if (voiceRecording) Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"voice_listening\",\"value\":true}}");
       else {
-        voiceCooldown = millis();
         Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"voice_record_failed\",\"value\":%u}}\n", (unsigned)ESP.getMaxAllocHeap());
       }
     }
     if (voiceRecording) {
-      if (voiceLevel >= 60) voiceLastSound = voiceNow;
-      if (!microphone.isRecording() || (!voiceManual && voiceNow - voiceLastSound >= 900UL)) {
+      if (voiceStopRequested || !microphone.isRecording()) {
         microphone.stopRecording();
         voiceRecording = false;
-        voiceCooldown = voiceNow;
+        voiceStopRequested = false;
         int sampleCount = microphone.getRecordingLength();
-        if (sampleCount >= 12000) {
+        if (sampleCount >= 4000) {
           const int16_t* audio = microphone.getRecording();
           WiFiClient voiceClient;
           HTTPClient voiceRequest;
@@ -282,6 +274,5 @@ code:
             voiceRequest.end();
           }
         }
-        voiceCooldown = millis();
       }
     }

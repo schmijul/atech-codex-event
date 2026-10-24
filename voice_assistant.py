@@ -6,6 +6,7 @@ import json
 import os
 import secrets
 import ssl
+import time
 import urllib.error
 import urllib.request
 import wave
@@ -64,10 +65,10 @@ def assistant_reply(transcript):
     global has_disclosed_voice
     request_body = json.dumps({
         "model": "gpt-6-luna",
-        "reasoning": {"effort": "none"},
-        "instructions": "You are a helpful, calm voice assistant for an older adult. Reply in one short spoken sentence, under 20 words. Do not claim to have changed devices, medication records, or external data unless a tool actually did so.",
+        "reasoning": {"mode": "standard", "effort": "none"},
+        "instructions": "You are a helpful, calm voice assistant for an older adult. Reply in one direct spoken sentence of 10 words or fewer. Do not claim to have changed devices, medication records, or external data unless a tool actually did so.",
         "input": transcript,
-        "max_output_tokens": 100,
+        "max_output_tokens": 48,
     }).encode()
     result = json.loads(openai_request("/responses", request_body, "application/json"))
     for item in result.get("output", []):
@@ -85,9 +86,9 @@ def create_speech(text):
     request_body = json.dumps({
         "model": "gpt-4o-mini-tts",
         "voice": "coral",
-        "speed": 0.8,
+        "speed": 1.0,
         "input": text[:500],
-        "instructions": "Speak clearly, warmly, and at a measured pace.",
+        "instructions": "Speak clearly, warmly, and at a natural conversational pace.",
         "response_format": "pcm",
     }).encode()
     pcm_24k = openai_request("/audio/speech", request_body, "application/json")
@@ -127,16 +128,22 @@ class VoiceHandler(BaseHTTPRequestHandler):
                 self.send_error(400, "Incomplete audio body")
                 return
             print(f"received audio: {length // 2} samples from {self.client_address[0]}", flush=True)
+            started = time.monotonic()
             form, content_type = multipart_audio(make_wav(pcm))
             transcription = json.loads(openai_request("/audio/transcriptions", form, content_type))
+            print(f"transcription_seconds: {time.monotonic() - started:.2f}", flush=True)
             transcript = transcription.get("text", "").strip()
             if not transcript:
                 self.send_error(422, "No speech recognized")
                 return
             print("heard:", transcript, flush=True)
+            stage_started = time.monotonic()
             reply = assistant_reply(transcript)
+            print(f"model_seconds: {time.monotonic() - stage_started:.2f}", flush=True)
             print("reply:", reply, flush=True)
+            stage_started = time.monotonic()
             speech = create_speech(reply)
+            print(f"speech_seconds: {time.monotonic() - stage_started:.2f}", flush=True)
             self.send_response(200)
             self.send_header("Content-Type", "application/octet-stream")
             self.send_header("Content-Length", str(len(speech)))

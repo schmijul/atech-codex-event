@@ -106,3 +106,15 @@
 - Added a manual recording beep and an auto-recording toggle for repeatable checks; drained the declared response body instead of stopping early on the socket connection flag. Shortened model replies to one sentence and handled transient TLS failures.
 - Integrated the existing main-worktree dashboard reminder implementation into the microphone branch so flashing the voice firmware preserves configured reminder timing. The hosted `/api/reminder/next` endpoint returns HTTP 200.
 - Final combined voice/reminder firmware built and uploaded successfully (14.6% static RAM). User confirmed the earlier reply was audible; increased speaker volume to 70% at their request. The later loudness-check capture contained no recognized speech (HTTP 422), so the increased level has not yet received a user quality confirmation. Restoring automatic listening after the controlled tests. Both dashboard and voice services remain hosted on this computer.
+
+## 2026-10-24 — Voice response pace
+
+- User reported the audio response was very slow. The live TTS request was explicitly set to 0.8x speed with measured-pace instructions, so changed it to the API's normal 1.0x speed and natural conversational pacing.
+- Added separate host-side duration logs for transcription, model generation, and speech synthesis so a long pause before playback can be diagnosed independently from speaking rate.
+- User measured about seven seconds of response wait. Recent logs show transcription around 0.7–1.6s, model generation 1.3–2.3s, and speech synthesis 1.1–1.6s. Confirmed the model was already GPT-6 Luna with reasoning effort `none`; made standard mode explicit and limited spoken replies to ten words to reduce generation and TTS time.
+
+## 2026-10-24 — Slot-1 push-to-talk
+
+- User asked to repurpose the reset button so voice capture has explicit start/stop points. Made slot 1 hold-to-talk: press starts recording and release stops/sends; the start beep indicates capture. Automatic sound-triggered recording is disabled/removed to prevent ambient speech from starting a request.
+- The microphone module still has a three-second hard capture limit; recordings also send automatically at that limit. Lowered the minimum send length to 0.25 seconds (the voice API's minimum) for short explicit utterances.
+- Slot 1 no longer clears medication status or replays a reminder. Updated the display labels and README to describe the new button behavior.
