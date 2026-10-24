@@ -9,12 +9,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 DATABASE = Path(__file__).with_name('meds_taken.sqlite3')
-PAGE = '''<!doctype html>
-<html lang="en">
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Medication log</title>
-<style>
+STYLES = '''
 :root{font-family:'Helvetica Neue',Arial,sans-serif;color:#2f3437;background:#f7f6f3}
 *{box-sizing:border-box}body{margin:0}main{max-width:1040px;margin:auto;padding:64px 28px}
 header{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:40px}
@@ -37,16 +32,47 @@ th,td{padding:17px 24px;border-top:1px solid #eaeaea}td{font-size:14px}
 .tag{background:#edf3ec;color:#346538;padding:5px 9px;border-radius:4px;font-size:12px}
 footer{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-top:20px;font-size:12px;color:#787774}
 .controls{display:flex;gap:8px}.controls button{padding:8px 12px}#error{color:#9f2f2d}#empty{padding:32px 24px;border-top:1px solid #eaeaea}
+.back-link{display:inline-block;color:#787774;font-size:14px;margin-bottom:32px;text-decoration:none}.back-link:hover{text-decoration:underline}
+.people{margin-top:48px}.people-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.person{display:flex;align-items:center;gap:20px;background:white;border:1px solid #eaeaea;border-radius:8px;padding:28px;color:inherit;text-decoration:none}
+.person:hover{background:#fbfbfa}.person:focus-visible,.back-link:focus-visible{outline:2px solid #346538;outline-offset:4px}
+.person-number{display:grid;place-items:center;width:56px;height:56px;flex-shrink:0;background:#edf3ec;color:#346538;border-radius:8px;font:22px Georgia,serif}
+.person-details{flex:1}.person-details h2{margin-bottom:8px}.person-details p{margin:0;font-size:14px}.person-open{font-size:14px}
+@media(prefers-reduced-motion:no-preference){.people{animation:appear .4s ease-out}@keyframes appear{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}}
+@media(max-width:600px){.person{padding:20px;gap:16px;flex-wrap:wrap}.person-open{width:100%;padding-top:12px;border-top:1px solid #eaeaea}}
 @media(max-width:600px){main{padding:32px 16px}h1{font-size:40px}.metrics{grid-template-columns:1fr}.metric{border-right:0;border-bottom:1px solid #eaeaea}th,td{padding:16px 12px}footer{flex-wrap:wrap}.section-head{padding:20px 12px}}
-</style>
+'''
+
+PICKER_PAGE = '''<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Choose a person</title>
+<style>''' + STYLES + '''</style>
 <main>
-<header><div><div class="eyebrow">Atech / Home assistant</div><h1>Medication log</h1><p>Button confirmations, recorded as they happen.</p></div><button id="refresh">Refresh</button></header>
+<header><div><div class="eyebrow">Atech / Home assistant</div><h1>Choose a person</h1><p>Open a dashboard to view confirmations and manage daily reminders.</p></div></header>
+<div class="people" aria-labelledby="people-heading">
+<div class="people-heading"><h2 id="people-heading">People</h2><span class="eyebrow">1 person</span></div>
+<a class="person" href="/patients/1"><span class="person-number" aria-hidden="true">01</span><div class="person-details"><h2>Patient 1</h2><p>Medication reminders &amp; confirmation history</p></div><span class="person-open">Open dashboard <span aria-hidden="true">&rarr;</span></span></a>
+</div>
+</main>
+</html>'''
+
+PAGE = '''<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Patient 1 · Medication log</title>
+<style>''' + STYLES + '''</style>
+<main>
+<nav aria-label="People"><a class="back-link" href="/">&larr; All people</a></nav>
+<header><div><div class="eyebrow">Atech / Home assistant · Patient 1</div><h1>Medication log</h1><p>Button confirmations, recorded as they happen.</p></div><button id="refresh">Refresh</button></header>
 <div id="error" role="status"></div>
-<section class="schedule"><h2>Daily reminder</h2><p>Choose when the board should start its medication reminder. The time uses this browser’s local timezone: <span id="schedule-zone"></span>.</p><form id="schedule-form"><label>Start time<input id="reminder-time" type="time" required></label><button id="save-reminder">Save reminder</button><button id="disable-reminder" type="button">Turn off</button></form><p class="schedule-status" id="schedule-status" role="status">Loading reminder…</p></section>
+<section class="schedule"><h2>Daily reminder</h2><p>Choose when the board should start its medication reminder. The time uses this browser’s local timezone: <span id="schedule-zone"></span>.</p><form id="schedule-form"><label>Start time<input id="reminder-time" type="time" required></label><button id="save-reminder" type="submit">Set reminder</button><button id="disable-reminder" type="button">Turn off</button></form><p class="schedule-status" id="schedule-status" role="status">Loading reminder…</p></section>
 <div class="metrics"><div class="metric"><div class="eyebrow">Today</div><div class="value" id="today">—</div></div><div class="metric"><div class="eyebrow">All confirmations</div><div class="value" id="total">—</div></div><div class="metric"><div class="eyebrow">Last recorded</div><div class="value" id="latest">—</div></div></div>
 <section><div class="section-head"><h2>Confirmation history</h2><span class="eyebrow">Newest first</span></div><table><thead><tr><th>ID</th><th>Date & time</th><th>Event</th></tr></thead><tbody id="rows"></tbody></table><div id="empty" hidden>No confirmations yet. Start the logger and press the medication button to record one.</div></section>
 <footer><span id="status">Reading meds_taken.sqlite3…</span><div class="controls"><button id="prev">Previous</button><button id="next">Next</button></div></footer>
-<p style="font-size:12px">Times shown in <span id="zone"></span>. A confirmation records a button press; no medication schedule is configured.</p>
+<p style="font-size:12px">Times shown in <span id="zone"></span>. A confirmation records a button press.</p>
 </main>
 <script>
 let events=[], page=0;
@@ -187,6 +213,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == '/':
+            body, content_type, status = PICKER_PAGE.encode(), 'text/html; charset=utf-8', 200
+        elif self.path == '/patients/1':
             body, content_type, status = PAGE.encode(), 'text/html; charset=utf-8', 200
         elif self.path == '/api/reminder':
             try:

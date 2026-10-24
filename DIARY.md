@@ -77,3 +77,39 @@
 - Dashboard still had only the pre-existing row, confirming the board has not produced a successful POST. Added serial `wifi_status` transitions and `meds_button` logs for read-only diagnosis; these do not write to the API. USB port is available for a monitor check.
 - Observed board button event in serial diagnostics, but Wi-Fi status alternated `1` (SSID unavailable) and `6` (disconnected), even after the user enabled iPhone Maximize Compatibility and firmware tried `iPhone von Julian` capitalization. The API database still contains only the original row. Replaced blind `WiFi.begin` retry with async visible-network scans, logging the visible AP count and whether the configured SSID (case-insensitive) is present; when found, connect using the broadcast spelling.
 - Final verification succeeded: scan found the hotspot among 24 visible networks; the firmware connected (status 3), observed the button event, and logged `meds_api_saved` (only on HTTP 201). Read-only GET showed new row id 2 at 2026-10-24T11:04:35+00:00. The SSID scan matched case-insensitively and connects using the exact broadcast spelling. No test POST was sent.
+
+## 2026-10-24 — Missing incoming updates
+
+- Checked SQLite directly and GET /api/events through localhost and Wi-Fi IP: all return the single original record, id 1 at 10:37:35 UTC.
+- Running server logs show repeated successful dashboard GETs and no incoming POST requests. Dashboard polling is working; no new API writes have reached this process.
+- Current firmware emits meds_taken over serial, with no Wi-Fi HTTP integration. No meds_logger.py process is running on this host. Asked which device/client is sending updates and for its HTTP response to identify the missing connection.
+
+- User confirmed the board has Wi-Fi and is on the same network. Fetched origin: no newer commits. The checked-in YAML and generated C++ contain no Wi-Fi/HTTP calls; they emit serial events only. No USB board device is present here, so the running firmware cannot be inspected directly from this host. Need the sending firmware or its HTTP response to continue tracing the board-to-API path.
+
+- Pulled commit 095300a (Send medication confirmations over Wi-Fi). Preserved both upstream firmware notes and local investigation notes when resolving the diary conflict. New firmware targets the correct API URL and uses JSON {}; prior serial-only diagnosis described the older checkout.
+
+- Rechecked missing button updates after pulling Wi-Fi firmware: server is bound to 0.0.0.0:8000, host still has 172.20.10.5, UFW is inactive, and nftables has no host-input blocking rules. Database still has one row and server logs contain no POSTs. Need board serial output/Wi-Fi status after a reset-confirm cycle to distinguish lack of association, request failure, and suppressed repeat confirmations. No local USB device is available for direct inspection.
+
+## 2026-10-24 — Pull latest changes
+
+- Fast-forwarded main from 095300a to 2ba5e10. Initial pull was blocked by local diary and SQLite edits; saved them in a Git stash before pulling.
+- Combined upstream and local diary additions. Restored the local medication database without merging event records; both original database versions are backed up at /tmp/atech-pull-backup-tqcg948j/ and the stash remains available.
+- Python is available as python3; the initial python backup command failed before the successful python3 backup. A bytes-literal encoding error interrupted the first diary resolution script; corrected it with UTF-8 encoding and verified the final diff.
+
+## 2026-10-24 — Show the reminder button
+
+- The running dashboard predates the pulled reminder controls: GET / has no schedule form and GET /api/reminder returns 404. The latest source already implements daily reminder persistence and board polling endpoints.
+- Renamed the submit button to “Set reminder”, made its submit type explicit, and removed the obsolete footer claim that no schedule is configured. Updated the usage instructions to match.
+- Verified set/read/board-schedule/disable endpoints against a temporary database without adding medication events. Restarted dashboard.py and reloaded the existing browser tab; confirmed the Daily reminder time field, Set reminder button, Turn off button, and disabled-schedule status are visible. No live reminder time was chosen.
+
+## 2026-10-24 — Person picker
+
+- User wants the starting page to select a person, with only the existing patient available for now. Used the minimalist UI skill to keep the current warm monochrome style.
+- Added a single Patient 1 link at /, moved the existing medication dashboard to /patients/1, and added an All people return link plus patient context in the title/header. Shared the existing CSS between the two pages in the same Python file.
+- Kept the current SQLite history, reminder settings, and board API endpoints. Additional patients and data separation are outside this one-person step; no invented patient identity or registration UI.
+- Verified Python compilation and whitespace checks, restarted the dashboard, and exercised the browser round trip from picker to Patient 1 and back. Existing four confirmations, reminder controls, and timezone rendered correctly; left the browser on the picker. Saved a visual preview at /tmp/atech-person-picker.png.
+
+## 2026-10-24 — Push dashboard updates
+
+- Reviewed the person picker, patient dashboard navigation, Set reminder label, and usage documentation. Fetched origin/main and confirmed no divergence. Python compilation, whitespace validation, live page routes, and read-only API checks passed.
+- Committing the dashboard source, documentation, and diary for push to main. Keeping the locally modified runtime medication database uncommitted.

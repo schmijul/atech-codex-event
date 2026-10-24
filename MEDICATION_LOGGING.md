@@ -54,7 +54,10 @@ Run in a second terminal while the logger runs:
 python3 dashboard.py
 ```
 
-Open http://127.0.0.1:8000. The dashboard reads `meds_taken.sqlite3`
+Open http://127.0.0.1:8000 and select **Patient 1** to open the medication
+dashboard at `/patients/1`. Use **All people** to return to the person picker.
+The single current patient uses the existing history and reminder settings;
+additional patient records are not configured yet. The dashboard reads `meds_taken.sqlite3`
 and refreshes every five seconds. Its GET endpoint does not modify records;
 the POST endpoint below adds confirmations. It shows today's
 confirmations, the total, the latest timestamp, and history in pages of 50.
@@ -63,7 +66,7 @@ Stop the server with Ctrl-C.
 
 ### Daily reminder time
 
-In the dashboard, choose a time and save it to schedule the board's daily spoken
+In the dashboard, choose a time and click **Set reminder** to schedule the board's daily spoken
 reminder. The browser's IANA timezone is saved with the time, including daylight
 saving changes. The board checks for schedule updates every 30 seconds and starts
 the reminder at that local time; it repeats every 30 seconds until the meds-taken
