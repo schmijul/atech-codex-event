@@ -1,5 +1,21 @@
 # Medication event log
 
+## Wi-Fi API (board to SQLite)
+
+The board sends a POST to `http://172.20.10.5:8000/api/events` with body `{}`
+when the meds-taken button is pressed. The server records the current time, so
+the board does not supply a timestamp. The board and API host must be on the
+same Wi-Fi network. Firmware uses the iPhone hotspot credentials stored in the
+ignored local file `slot-8-display/.wifi_secrets.h`; do not commit that file or
+share firmware binaries containing the credentials.
+
+Read confirmations with `GET /api/events`. Do not run `meds_logger.py` alongside
+the Wi-Fi API; both would record the same physical button press.
+The firmware retries an explicit `503` or a request that did not start. If the
+POST times out or loses its connection after sending, it does not retry because
+the server may already have saved it. Check `GET /api/events` before manually
+retrying an uncertain confirmation.
+
 Run the logger while the board is connected:
 
 ```bash

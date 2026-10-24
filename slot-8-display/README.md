@@ -9,6 +9,9 @@ then every 30 seconds. Press the button after taking medication to stop reminder
 and show “Meds taken” on a green background. This confirmation stays until restart;
 there is no daily schedule or saved state.
 Press the slot-1 button to reset the reminder and immediately replay the spoken prompt.
+When the meds-taken button is pressed, firmware sends one HTTP POST with `{}` to
+`http://172.20.10.5:8000/api/events`. The API server must be running on the same
+network. Configure hotspot credentials in the ignored local file `.wifi_secrets.h`.
 
 Edit `project.yaml` to place modules, then:
 
