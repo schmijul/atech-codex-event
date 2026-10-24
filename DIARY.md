@@ -118,3 +118,12 @@
 - User asked to repurpose the reset button so voice capture has explicit start/stop points. Made slot 1 hold-to-talk: press starts recording and release stops/sends; the start beep indicates capture. Automatic sound-triggered recording is disabled/removed to prevent ambient speech from starting a request.
 - The microphone module still has a three-second hard capture limit; recordings also send automatically at that limit. Lowered the minimum send length to 0.25 seconds (the voice API's minimum) for short explicit utterances.
 - Slot 1 no longer clears medication status or replays a reminder. Updated the display labels and README to describe the new button behavior.
+
+## 2026-10-24 — Faster voice model and volume knob
+
+- User reported another delayed reply. The latest timed request showed the chained stages taking 1.21s for transcription, 1.85s for GPT-6 Luna, and 9.39s for TTS. The speech generation call was the dominant delay.
+- Replaced the three-request transcription → text model → TTS pipeline with one bounded `gpt-audio-1.5` Chat Completions request that accepts the recorded WAV and returns spoken WAV. This removes two sequential network round trips and replaces the deprecated `gpt-4o-mini-tts` voice with the current higher-quality audio model. Selected the built-in `marin` voice, which OpenAI recommends for quality.
+- The request still completes after button release rather than using a persistent Realtime session, so true sub-second conversational audio is outside this request-based design. The host now logs one end-to-end voice model duration.
+- The requested 11–12 encoder placement failed SDK validation because position 12 is the board's built-in Restart button and is reserved. The board catalog permits the adjacent 10–11 pair, so configured the encoder there. Its plug on position 12 must be moved to position 10; the plug on 11 stays in place.
+- The volume control starts at 70%, adjusts in 10% steps from mute through 80% to avoid the speaker's clipping range, and maps the level to its LED ring.
+- A host-only request with the existing speech fixture returned HTTP 200 and 84,800 bytes of speaker PCM in 2.52 seconds. The old timed pipeline took about 12.45 seconds across its three AI calls, so the one-request path reduced measured host processing by about 80%. Physical board playback remains to be checked after flashing.

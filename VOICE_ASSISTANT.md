@@ -1,6 +1,6 @@
 # Voice assistant
 
-The board listens for nearby speech, records up to 3 seconds, and sends it over Wi-Fi to this computer. The computer transcribes it with OpenAI, gets a short response from the model, generates speech, and sends 16 kHz audio back to the board speaker. The first reply identifies the voice as AI generated.
+Hold the slot 1 button while speaking. The board records up to 3 seconds and sends the recording over Wi-Fi to this computer when you release the button. The computer sends one audio request to OpenAI and returns 16 kHz reply audio to the board speaker. The first reply identifies the voice as AI generated.
 
 ## Start the host service
 
@@ -12,12 +12,12 @@ python3 voice_assistant.py
 
 The service listens on port 8001. The firmware currently targets `172.20.10.14`, the computer's hotspot address. If that address changes, configure it over USB with `atech send voice_host 172.20.10.14` (replace the address). This setting lasts until the board restarts. Update the default `/api/voice` URL in `slot-8-display/project.yaml` for a permanent change.
 
-The generated voice uses `speed: 0.8` for slower speech, and the board speaker starts at 70% volume.
+The bridge uses `gpt-audio-1.5` with the `marin` voice. Combining speech understanding, response generation, and speech output in one request removes two serial network calls from the previous pipeline.
 
 ## Use it
 
-Speak after the board has joined Wi-Fi. Sound level triggers recording; a 900 ms pause ends the utterance. Keep each command under 3 seconds. The board waits for the host's response and then plays it through the speaker. There is an 8-second cooldown between recordings.
+Wait for the board to join Wi-Fi. Hold the slot 1 button, speak after the beep, and release it when finished. The three-second microphone limit ends and sends a recording automatically if you keep holding the button.
 
-For a controlled sound check over USB, run `atech send voice_auto off` and then `atech send voice_record`. Speak immediately after the beep; recording lasts three seconds. Re-enable automatic capture with `atech send voice_auto on`.
+The rotary encoder must span slots 10 and 11. Turn it to adjust the speaker from mute through 80% in 10% steps; its LED ring shows the current level. Slot 12 is the board's built-in Restart button and cannot host the encoder.
 
-The assistant only answers verbally. It has no tools to change medication records or control the board. The OpenAI Speech API currently returns raw 24 kHz PCM; the host converts it to the speaker's 16 kHz format. That Speech API model is deprecated for shutdown on 2027-01-06, so migrate the speech generation step to Realtime before that date.
+The assistant only answers verbally. It has no tools to change medication records or control the board. The audio model returns 24 kHz WAV; the host converts it to the speaker's 16 kHz format. The request starts after button release. A persistent Realtime API session is the next step if still lower first-audio latency is required.
