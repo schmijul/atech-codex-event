@@ -7,6 +7,7 @@ Generated firmware for **Atech 14-Port Board** (`14port`).
 - **ST7735 TFT display — software SPI compatibility fix** (`st7735_tft`) as `display` on `port_13, port_14`
 - **I2S Speaker (MAX98357A)** (`speaker`) as `speaker` on `port_3, port_4`
 - **Button** (`button`) as `button` on `port_9`
+- **Button** (`button`) as `resetButton` on `port_1`
 
 ## Build & flash
 

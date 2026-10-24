@@ -16,6 +16,9 @@ modules:
 - id: button
   instance: button
   port: port_9
+- id: button
+  instance: resetButton
+  port: port_1
 code:
   setup: 'display.setDirectMode(true);
 
@@ -25,9 +28,13 @@ code:
     \ lastReminder = 0;\n\nif (button.wasPressed() && !medsTaken) {\n  medsTaken =\
     \ true;\n  speaker.stop();\n  needsRedraw = true;\n  Serial.println(\"{\\\"type\\\
     \":\\\"event\\\",\\\"payload\\\":{\\\"event_type\\\":\\\"state\\\",\\\"key\\\"\
-    :\\\"meds_taken\\\",\\\"value\\\":true}}\");\n}\n\n// Preserve the delayed refresh\
-    \ that worked with this display.\nif ((!refreshed && millis() > 2000) || atech_action\
-    \ == \"display_refresh\") {\n  if (!refreshed) display.begin();\n  display.setDirectMode(true);\n\
+    :\\\"meds_taken\\\",\\\"value\\\":true}}\");\n}\n\nif (resetButton.wasPressed())\
+    \ {\n  medsTaken = false;\n  speaker.stop();\n  needsRedraw = true;\n  reminderStarted\
+    \ = false;\n  lastReminder = 0;\n  Serial.println(\"{\\\"type\\\":\\\"event\\\"\
+    ,\\\"payload\\\":{\\\"event_type\\\":\\\"state\\\",\\\"key\\\":\\\"meds_reminder_reset\\\
+    \",\\\"value\\\":true}}\");\n}\n\n// Preserve the delayed refresh that worked\
+    \ with this display.\nif ((!refreshed && millis() > 2000) || atech_action == \"\
+    display_refresh\") {\n  if (!refreshed) display.begin();\n  display.setDirectMode(true);\n\
     \  refreshed = true;\n  needsRedraw = true;\n  if (atech_action == \"display_refresh\"\
     ) atechDone();\n}\n\nif (needsRedraw) {\n  display.fillScreen(medsTaken ? ST7735_TFT::COLOR_GREEN\
     \ : ST7735_TFT::COLOR_BLUE);\n  if (medsTaken) {\n    display.displayText(\"Meds\
@@ -36,12 +43,47 @@ code:
     \ your\", 20, 28, 2, ST7735_TFT::COLOR_WHITE);\n    display.displayText(\"meds?\"\
     , 50, 48, 2, ST7735_TFT::COLOR_YELLOW);\n    display.displayText(\"Press button\
     \ when taken\", 11, 70, 1, ST7735_TFT::COLOR_WHITE);\n  }\n  needsRedraw = false;\n\
-    }\n\n// A short chime repeats until acknowledged; audio runs in the background.\n\
-    unsigned long now = millis();\nif (refreshed && !medsTaken && (!reminderStarted\
-    \ || now - lastReminder >= 30000UL)) {\n  speaker.playNote(NOTE_C5, 180);\n  lastReminder\
-    \ = now;\n  reminderStarted = true;\n  Serial.println(\"{\\\"type\\\":\\\"event\\\
-    \",\\\"payload\\\":{\\\"event_type\\\":\\\"log\\\",\\\"key\\\":\\\"meds_reminder\\\
-    \",\\\"value\\\":\\\"Have you taken your meds?\\\"}}\");\n}\n\nif (atech_action\
+    }\n\n// Spoken reminder repeats until acknowledged.\nunsigned long now = millis();\n\
+    if (refreshed && !medsTaken && (!reminderStarted || now - lastReminder >= 30000UL))\
+    \ {\n  static const char elevenLabsSpeech[] =\n    \"AAkAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABCgGQkAEQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGQAAAAAAAAAAAAAAAAAAAAAAAAAAGQCQAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJARkRAhCamQChEQGRmQkbIReywIsLNyL6DEWIoY8wI7uJKkOqGAKeRZiSmwlW2ZgQA6GtGTID+ZwqUYAE0JuJc6qLQhinwJqschKyvJszMPB4ePO6P5I1CAmLQdm0iBAJkw7KGFGDgagRv1AICDQBoYo8rhAYgZQRu6xIAqHLijgMEouMehSSoASBlhkLKEe0sI4oMbGC2wAqBZLSC61hEpG/IRCRixpwpKCoO5hUsCi9QwoGuaQguRDbOSiBiESrrTgmiqs3AZqJCmOS06uZcagV0KwaUQCEvhIooxnbMpwUu6lxgZKAKVMKkCi/gL2IANuQRoERGTIglZDPKxip3QSBmEAYFYCYMIohvsuLvwIXoAgYAwOZIB2Jiuu7l4EASAknqAA4ixiq+qqXkABICAe4CEgIgLzMiQWCiDkKF5EIOAsJvPqaBjSaKQsHAoAoi4uZ+KqAZBgJm4JGEAkLi6ngqJB0KJmooGQYAIqtqqgHuSFZmpO4U0iaGc6YiIeBiUqKlIARUJsJqsCKpVSLKonTIwhQCbypyAiRdCmcqJFFGA\"\
+    \n    \"oamsipB5A5eomkkBFRmpuasYmldAmaqbBVGBgKqcirJyMKSqu0AwBwCZu5sYXJcSibsagTcYkLrbCLA3WqCgjABQgoKZ25kAepKGCbsIABYRiLqsCZgnYImwDIhRIIGYrJqJcDClAK2IKAMWCciaChmXJBrYiYkTYYCRnLmgQ3qSkoy5IDAHAJrZiTkoBxGb2BoAJBKguq8JojcoqKmcgVIhkrncC8I2SqCAjIggMQOa+42yREqgAZugSCmUgcoOsAdJmJIaqYI4kYK9PBynIiqgGIyhMUvQ2LN4KqEDGrAAHLIDDi2apyI7oQEbyKNJqenEMU2glCiKoQBLifE4PsCVKAmRAAqwgzuuxhJMiaMwG8EBK7jTaizRlDgKooIaqJEZ66R5G8KEOQmhAAqJoIr0g2yKpCA7sJQpC8KSWwvSgikZsoQ5CZEQGJC4+sAYHsEDWRqiE1sIkoGgLY/AkjqKpCFbgIMxKZEBjNmpjaqoABAycRIFIxChkY662ZmMqaERQEEjNCMEEQm73MmanLmQOpkHUTgDFCCYoYqsyqqruZkagFNiIhNDMhGSmKu9+7mru6ggUBU0QQEDCJnKu8ypigoBI0IyMjIzIYjZy627u6qRMWIyQyQkIRGgyLvrqqvKqAg5QSIzMyQRExGpu8uqm5oQERISERIREQAQkBkBAJmZGRkBkACZAAkAEAABAAAAAAABAAEAAQCRAQEAAAGQAJAJGZCQCQAAEAkAABkAmZGQkaEDGwVfO2teCgjSAhnIx6MQCSlKLggZmOO0oxA6Ppm0MS+J\"\
+    \n    \"ogDSk8HDE38/OwmyWRzFkZLApAGQKDspiAuxAz0+PJDTxIGAkQA5Kiuop6AQKYGywFFKu6aBAFuJEg8wmpE5ASycUFuKspOhwdSCWCvB1cKzgwhZLzkKCQGgoMEUexkuCcKjmEJ8KxsYkKOgUJm45baygTFNOywYmAmxtbOztNSikiAqTDoLCuODST47SwrDwoMoPTwa0MWzkwA6TRoImKKCgCgMspOK4FA/Gimxt5UBiBkuHIqwtAMxUXkqkLDziIq4SQkFMBExANHRuD4OmBgYMUAxEUGc8pk8H4mAEBEzOKZRDdGQKgygICkEUQiUaYzCiCoMoWmJBDmhEzy5wdhZDqJqmBIqoiEcsQn5SI2jWqAjK7MwjKIs+SCMpGqwJIuUOrgwu6I+yBMus2GKkzuwOLqQLrgzH6ZpqBIMkiqQCivhUKoWHKNKuCGpg5oLxWrAQpoEDJIZkRiwnYUclTu0ScAgmRKaA74y2mK5Q6sjjYMakgngGqRKs0qzPLI7lDnAmK4zuzerNLwjqkKJgJi+ULB4oTqyK5QaE7kY+y2ECxWbMsowkRgC25iuU7hRoCqTi0KBGbKu2kmEChOpKACQcpKKoN2bRKApEqkoE4lVgIq5zxoUmiAiqDATkEIEucz7C5KbMDaIEEIDOCPAvfubqJs5JhExYwISIbDN27upuxhFETNEFCEQoMzLvZm7iGICM1MkERGhy8zMiquJQANTQiQhAQG73Nu7qpsoJjElUwECEKjLzduZmglSITM0BCIBkLrey5yaiTAkQjM0MQMAqfysvKqa\"\
+    \n    \"CEQRJTITQ4CAus/Kq6qJMBRUIjNBAhiZ3Ly8upqIUyEnIhIUgJGpzrqdqokQFHESMiGDCJD7y9uamohBATchEiMAALrdy7yqmRAychUxERMAkMrcy6yZChAzchQiIQOAoNvNyqupCDAUVSESMgGAqNy83IqpCEACRSESMgAAqdzMy4upCEEDRhIRQoAYqL3LvomqAUIhFxIRIpIayK3MzRgAAFOJQ5hIgyiCrbjfmUgBFKAcsVACOMMayxj7ijkVE5oMqDUgEtoAnIHbm0sHIrgMoGMYEcoBqhK82okmMLOPkUiCEdApqSDYuapyEoSsADoGGLErmSHAyY86hSPZKpoWgAIMmBCBC92ZUzCSvZFYAzngCIgSqcidCRchyAugRIARrJI4gZr7m2kTA+sqChaAkg2AIKIKzYloEgHrGBkFCKEbkEKgir6ZeYQC2hkYJImyHIBRsJi8mUoXEegaiDSYAY2BIIKb6pqoRwChnYFQkhjJEAgEqLmcmnqGAckqCDSogQ6BIYGby5rIcgOSzQFJAwngKAgiqKmdqKpnCJGcgViCCdggCCK4uJyou3eAgawBOAQK0DmAJJmpq7iLfpUByTqIJamSDYIxkYrbgKm5ZwiQnIJQgRrYIAATqaiNkJscNyDaLJA0oCiPASCCCsoIqZo/BwC5O5AmqIGNAjCTC9oZuKovFxjIK4BjqBCsEyiFmrELoYzLRxiYjZJBkRnKESAVmamagbvceoWByigIFZmRDAIilIu5GsHJy2YIobsDaIIb4CgAQriAujCr2ZxHKaiMklKA\"\
+    \n    \"GtkREEOqoIsBC766ZxigjIFRkQrQIABCuJCLIZzwmXCBkssRSQO5oR0SQaOLmjqQ6suLZxiojIJRkQrIIBBiuICaIYu5vkkXGMkrkVSwGMsTACWbkIoEi8iOGRcAuRyBY6AZuyIRNbqQmoaJqq3IRxmQrAJYgorAKRFBwgmZQLiQzIlchxi5GoJToBrLMgBEq4CKBYq4nrBwhIDaKBgVqYCMIhCFC5gpo5j6C7pzlZKsOCkHmaEcAiCUG7hIohnNiblxloHKKAAkqYCdEwAUq5KJBQvgi6h7hwioG5JSkRraIIFRsBiqQZiAzYiLV4iRnBA5FImwDgEhgwrIOYEo+5uregcYqYuRUwIJ+QgAQaEAuTgIgfuqjHiVEbobmCaBEK2AAFOJgqoBioHMqZ5wgxLbGpk0ATHNgIlDCISKgIyBq7ifaIQhyQu4UgJByYi5MYJFmAi7iLnKrBxXKJGsoSsUMJeJsAuSUBMgwJuqu+mLeYYSqCvMEQBziIHJGZkyAzSZusy6u5tyByKoCcwAiHIAEcAJujiiN4GI2qq7mXmDNJI5+omoOQJSgyjQisA5Akiym+ybCoJBJTgFmYCdAJoyiSWQMrsRvRDKicocgIuCKEQiJBIgAQiAiZAYIignESH82rzMu6usGCFjJDNDMkISEQGaqb2qy6rby8y8vKupEENUM0NDIiQhEYiZyrusrKu7vcy8y6uKCENENCQzJDMyEgGpus2726q6vNvMu7yqiRBENDUzNDMkMxGIusy7y7u7y8u8vby8upkgYzQ1QzMkIxICmLrM\"\
+    \n    \"y7u6u8u6vMzbu7ybCUE1NUQyMyQiEYCpy6ysu7qry7q8vczLupsIUkQ0NCQzMiISgLm9vLy7uru6u8zL68u7u4pDVDREMkMiIxGBqdu826qqmpmZmJm6zby9y5oYUzVEQzIzMyMRqeu8y7u7qpqJiZipy73Nu7yZKFRENEMzMyQSEZi6vcy6u7u6u7urrLvbvMurmjBHVENDMjMiIgC6us28y7u7u7urigkQMlMiM1EyNVIjJkIjJkEhEoKBq83Mysu7y6qrCQgyc0NDNEIyMhKCkNm8vbzLqruqCTl+ecOAABEAERSEmbgBG5+qiYuJgBITJzMjKIELrUz5AYAICLgQHJjUEioYOkJJWJCBAfIZPIsJ01wrGxrJxaMIoSEQT4hcGhiJpLIRwqUgi3lLmaIxHZAYwUH6pZACi4KCP5kCGhEeiNajEBksOB6wlRAsKJmUmCCYgk+5AiC6WKnD0xLzs5J8CrExqhHBabmVkAAwP7mUgQkQAIqAUD8uCLGSAZmVTQg6CpCRSgrkk5mGKymoo7Q4+acAGAog6CIuGbCTsJYACoEQwXuJsKcoCCqolKAQwiDZBYnRIVssiJiTkKLzEluMtQErGCC6esGiARuXsLQYs6BCDF3RAhkZmqWAwpICPahYGhqR8pEiWwswrLU4EB0oHgKrYSuQiDgsaoyjo6HEiIVcCpABGhDIk9QBiAjikxiICNUhHAkIEvEg0QAoT4mIgTiZwpUZqJI5SUsrCsg1j4LTAahIi5UZCCmAuMbTAyw6qIS5g1AvgCmIqmI8C5GCsJJ6\"\
+    \n    \"PTu4JA2AsoKRTAmwEk4JkcIIBA2CGVwbgNNIiAmQgSEeKQgeAADzggkq0wjEAgoAsMeSELAiLluoIKABqZDHMotcoCihmrR5KisBims8mOMCoCg6KorEaggLMSzTsbUhmoCyJQ6Ioac4PJqTOlsKibeitAEbwgMbOMojDErIhrkEwbLGQBsasQSJoKYQiZAAEUotCrGkPSHggsgDDJUZADqgXAqgpAhJiYGq9ZUZoQIJq4cYGyCIkPOTSk2alokQmIKKESvI40EpmdKRlSsBKYkQPegiiBmphOMQCbK6cnuYsghNsBAQEYqaLaGjUSvTmDgNQAmDiS7hlKFpmRO5OukEmFmiiMlJGQGBwAG5Eao4hyjbIQQqnpAGChCIlcoQKLMREAz4GTgRiyUfsbA4MJiieKqljBFJkogg+znJJpkpmSG5TLKECQ6DkyoMOaQcKRSQrAqhc7EhsIvKmSYhkp6zDRAoFaA7g7r5OzSTkK1AvIgYR5CaqSqFGAQZsayaUDWIuJuIqnMiA66qmUGCQJOsmis3malJBLgKChWrMCUBy6mqMVEluridAJllEpC8iQJJghmynKAKQhGQsCHLkxAkmSEAqZEaEZEZuRmZCQEQkRqSABEJEZAAAAEAAZkBkBAAAACZkAKQAAABGRkAAAAAAAAZCQEAAAAAAJAQAAAAABkJEAAZAAkQGQAZkAEAGRmQAAEJAQCQAQCQAAEJkQEAAJAAAQAZkAEACQGQkRAZAJAQGQAAAAAAGZABAAkBAAAAEJmRABAAAAkBkJEQkAGQEAAAAAAA\"\
+    \n    \"kJEBABkZAAAACQEAAAAAAAAZAACQEACQkRAAAAkBAACQAQAZCZEBABkAAAAZGZCRAQAAkAEAAJABAACQkQEAGZABAAkQkQAZGQCQAQAAAAAAAAAAAJEAAAAAAAAAAAAAAAAAAAAAABCQAAAAAJCRAQAAGRAJkAEAAAAAAAAAAAAAGQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACRABAJAAAAABAJAAAAGQAZGQAAAACRAAAAkQAAAAAAAAAAkAEAAAAAAAAAAAAAEAkAAAAAAAAAAAAAGQAAAAAAAACQAQAAAAAAAAAAAAAAAAAAAAAAABmRAAAQmQGQAQCQEAAAAAABCQAAABkAAAAAAAAAAAAAAAAAAAAAAAAAABkAAAAAAAAAAAAAkAEAAAAAAAAAAACQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJABAAAAAZGQABAJAAEJAAAAEAkAAJEAGQCRAJEAAAAAAAAAAAEJAAAQGQkAAAAQCQAAkQCRAAAAAAAAAAAAABAJAAAQCQAAAAAAAAAAABkAAAAAAAAAAAAAAAAAkACZCRCQ\"\
+    ;\n  static const char reminderSpeech[] =\n    \"cHfwmIUrEw8It2pL6ALwYg2BKPMQGioBm5XCMB7REzqcA0uqtyCJkTwBqIJJ6AI6yBEAH8YwDKIpkYiys3o6yQQq2KVYHbIgG7KyYIsijbITS4yzEqihcIuVixS5o22wIRyQlDqpk3vJlRgJkaFImYAhu7UiLAALgfMSDYF6mAmjiLJ4jEKpkMUgCiiag4iwYfE4iaN4mpCHmiCRKoABgal6oqwkmgCIiADMGLmAzBi4jIDYGaCcd6AgMwIINCSYKUeoCBGwC5iAvKsRz6qL+pmruJqbmZ4AANpQApgoiXcHKDMjiTEi6KwZkc4ZAsiKM6i7UaGsmyLsmiDAChESiUITCADJcXeAUhOpEALrmwi4zSkCyjgjqBslqLsguL4JgpwRU5FAFCChQPh5FplREro4o82JkMqbIbCbRYGJUoKaEJDKi5HKCREIAHOEOJNA+HkmqVEDuTCUvQmQ24sQuItEkAlTAZojocoqoJ6YEskREaJZAijZa3eRSBSZKRO9G4DrmgCojSGRmVOCiUIAqCqTnpAIyBsBmYkDoKHPdwQJNpEJQ7idAbqsiJi8GYK5SSWZQRKACSS5CZixvgionwCZIqh3JoBRA6gok72KqcyqiaiaGAEJIRQoI0KQMqsFjagqEbh1JwBSEhAzgRiYuZzauruqvqqZ3QipmgioChKZMBOIQYRZBTE2E0ImASIkASATqBiRzavJzJq6vJrKrIC7qwjLCRKYEDKYdCJDVCNTM0NCIyIhEQGQqcu83Kyq28uauquruau4igGKMRTKQiVRRDIkNTJD\"\
+    \n    \"NEIjFCICgKur+6q8u8y8q6yquqq7uBqLgaEnmbqFeRcSUxIRQiIUGBQIEKALyIigv/ugrJg9+jCMAfFJiij5cfA4wUga0pIPJNp4wCABqxScA4k4m4UonpcKgooDGYmjmnLpMKIOhZszmwERDpKhKYEcMo+VoDmyGjCpCye8UrhbwzuTmgQcgaAg+QccGMAwsQtErROJiCjDmVKoPZTSKDGNAYEqkJIIkAmrEL8pid2SoBsKi8k58RoCkp00mYsQUReIQUUiGHMSARAimAi62a6wzajbibqIywCAARBCMgQYIxADjgKaoNqKud9MVwGIUCWQCSEz6pqYiNusmQmorAgxA4wQYoKACCiBqsuJIai5WpECvfxcVyKRCDUUmKsYkLvPipmJqAmhGQNygZqZCQKa6wqpAJowAUcQEhCoyvyeVUUSgIgiEri8vLm7rYmJgDAzIwEyI/m/u5mZuIvKKaBQFCgGG5MMsL2+c2cigJgQEYC7rLucmhiCiAhBJJioq+rMy5mZiJkCMANTIjMAyprLqr39WmdDE5gICAK6rLysqRgTAIkJI5HLzbq+u6uZkCAiNDMlUgIhkIipmbms73hVNAIBEBgAiajbq8oJoKq5vqrNmLu6ypyoipmoGJkCMnETJgmCAMuqdUUjMjRTM0NCM0IRAICqur68vazLy8qqu7qqm6gJiAExICdAEgKbsLvf20gzJTJzNEMzUiNDMxISCJDL68y6vMvLuru7uruqmRkQMUJEMyUIEIAIybvurDhEJDJkQ0MjMjJEIyERCIDM282qu7u9\"\
+    \n    \"q8uaqquqmQggIlQCMiIyAyCRrKneqsq9DHcjMjRDJTJDAZiKkr26vwiZiLsIgKnavazcqpqIGQJiIxECCcEKuA4DORYYErqY/wx3ERARIQDZnQC5iZogQ5IoBarKvaqZ2xgQMSMyIbOPwAqRKDMzNIACya3anajLSXcnAACBgPqLEJmAiEMUmBmgrcqsCIgZICIUAYACrqibACI0cREQuJCturoqmDU5o5P/dwcACAgI2ZsBgICYOCeQiaCqy70JgIAREUMCiYKr+wqbNRglIBOYCL2YrpiKkkiBYKgY+Y93E4CACIDqqyCACKk4N6GJqavLvokBCAFAMROIiMiduhojRBJEgBK7mL25uymQZIEykAzYjvEddwOAgICQzJsRgIGJUjO4jNib2osIIQEyIkOoicmpr5EwJCIUALGsybsJikMSVIEhuIrIC5ErFou173cXCJiIqMqqEBMREkMS2ryru6sZYiQhEBGouqyqmAkyNTQTIZjJ65vKGQkxF0CSEZmouAyRMCVABCigmums6Z93FoCIiKnbmykSIjNDA8q+q7qbCDQlEwEAqKy7mQgoIkYhAgIZutvKmpkJE3MjEwIZyprJOCoUFViAkYgPucE6rcLtcXcBCIiZubyLITNDMyOwz6urqgkxRBKBiLm7q5kxQxAjkHGzOkeAigGamagRISFXAbgYSJS7OSUAkgyQAhj6D7JZ0asBIc4LdxUBEACI2awJmAgiIEKgrZi6vJmrgJmqKqgxFFMygzkHCyeAGESQEcsZkLg7oEmEAYl0BYAYEghCqBqT\"\
+    \n    \"q4KtELww+r2ZqqwZcjYyNUQRETMVAYAJgKm7u76828y6vLvLy5qqqamZiYgIEUQkEUM0RDJDMkMyMkMyIzMzIiIBmKq767u7u7vbqyGA28vK28uZCCBTVDQlY0MyJCIiMiEBAJjKzcy7vby8vLvLu7vLqquqmaCrGGI0U0MzQzMzNDI0MzM0QyMjMiIgudGtu9qqipsJGwAzQiG5lygQKbFJghMyGQu5q7mfkRExEDQwBQEasZk7oJIJzamRmiDlGT+vBhe4LZqYIYEHAr0IWxCAUKSQn4ingh5IgZmIEIDhgikcSirZxBQIHAgYsJOAkygtObq2KNGkKho9GuOUsUE/CsKTGBk7mcaCOioawaQg6caDaysaCLDHowFKLJiypDg8CrGjICvQkzmYknocwpKRsqMQfCwJgBi4x5M4Piug1IIYKksK1bOSajsrsKSBGZi0ME8s0aQAGBmJoSFNCsGTSZmCO/DHEj2JkQAZsLWCexvBlFob0pMpiZEQCQigxZM5XSywtJMpCQiASqiisrQBeywYGYrVo4GQACgainlNyMUCOpmzSBvBAlsbwrORw4N8G5CiMD/IpCAswIQqqJN7CqECK7ClABmQe5mzQC3RgzuZpCg8wAQsqKMRK6AoicJBjLUxHoCySAvSEjuatDBL0RhKsJMZLZGCHaIYKuQQOZuVOQqUiSnQgSqQAhCrF4ALojmYsZsIqCc5CuMQW7myYhiguBshAJAZuZOxOhAwCbmiAFGRiAurAVMJkpkbuQEhEKqRmTOQkjurkRExmZEQGhERALAZ\"\
+    \n    \"AQAAAAAAAAAAAAAAAAAAAA==\";\n  static int16_t decodedSpeech[18576];\n\
+    \  static const int stepTable[] = {7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21,\
+    \ 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130,\
+    \ 143, 157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494, 544, 598,\
+    \ 658, 724, 796, 876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272,\
+    \ 2499, 2749, 3024, 3327, 3660, 4026, 4429, 4871, 5358, 5894, 6484, 7132, 7845,\
+    \ 8630, 9493, 10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623,\
+    \ 27086, 29794, 32767};\n  static const int indexTable[] = {-1, -1, -1, -1, 2,\
+    \ 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8};\n  int predictor = 1;\n  int index = 0;\n\
+    \  int sample = 0;\n  for (int i = 0; elevenLabsSpeech[i] && sample < 18576; i\
+    \ += 4) {\n    uint32_t packed = 0;\n    for (int j = 0; j < 4; j++) {\n     \
+    \ char c = elevenLabsSpeech[i + j];\n      int value = c >= 'A' && c <= 'Z' ?\
+    \ c - 'A' : c >= 'a' && c <= 'z' ? c - 'a' + 26 : c >= '0' && c <= '9' ? c - '0'\
+    \ + 52 : c == '+' ? 62 : c == '/' ? 63 : 0;\n      packed = (packed << 6) | value;\n\
+    \    }\n    for (int byte = 2; byte >= 0 && sample < 18576; byte--) {\n      uint8_t\
+    \ encoded = (packed >> (byte * 8)) & 0xFF;\n      for (int half = 0; half < 2\
+    \ && sample < 18576; half++) {\n        int code = half ? encoded >> 4 : encoded\
+    \ & 0x0F;\n        int step = stepTable[index];\n        int delta = step >> 3;\n\
+    \        if (code & 4) delta += step;\n        if (code & 2) delta += step >>\
+    \ 1;\n        if (code & 1) delta += step >> 2;\n        predictor += code & 8\
+    \ ? -delta : delta;\n        predictor = constrain(predictor, -32768, 32767);\n\
+    \        index = constrain(index + indexTable[code], 0, 88);\n        decodedSpeech[sample++]\
+    \ = predictor;\n        decodedSpeech[sample++] = predictor;\n      }\n    }\n\
+    \  }\n  speaker.writeSamples(decodedSpeech, sample);\n  lastReminder = now;\n\
+    \  reminderStarted = true;\n  Serial.println(\"{\\\"type\\\":\\\"event\\\",\\\"\
+    payload\\\":{\\\"event_type\\\":\\\"log\\\",\\\"key\\\":\\\"meds_reminder\\\"\
+    ,\\\"value\\\":\\\"Have you taken your meds?\\\"}}\");\n}\n\nif (atech_action\
     \ == \"display_status\") {\n  Serial.printf(\"{\\\"type\\\":\\\"event\\\",\\\"\
     payload\\\":{\\\"event_type\\\":\\\"state\\\",\\\"key\\\":\\\"display_text\\\"\
     ,\\\"value\\\":\\\"%s\\\"}}\\n\", medsTaken ? \"Meds taken\" : \"Have you taken\
