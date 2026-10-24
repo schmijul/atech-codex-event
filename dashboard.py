@@ -8,6 +8,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from voice_tools import (TOOLS, execute_tool, initialize_database, list_requests,
+                         list_patients, save_patient, list_invitations, mark_invitation_played, dispatch_social_request)
+
 DATABASE = Path(__file__).with_name('meds_taken.sqlite3')
 PAGE = '''<!doctype html>
 <html lang="en">
@@ -112,7 +115,45 @@ refresh();loadReminder();setInterval(refresh,5000);
 
 
 class Handler(BaseHTTPRequestHandler):
+    def read_json(self):
+        length = int(self.headers.get('Content-Length', '0'))
+        if not 0 < length <= 16384 or self.headers.get_content_type() != 'application/json':
+            raise ValueError('Send a JSON object of at most 16384 bytes.')
+        data = json.loads(self.rfile.read(length))
+        if not isinstance(data, dict):
+            raise ValueError('Expected a JSON object.')
+        return data
+
     def do_POST(self):
+        played = re.fullmatch(r'/api/patients/([1-9]\d*)/invitations/([1-9]\d*)/played', self.path)
+        dispatch = re.fullmatch(r'/api/social/requests/([1-9]\d*)/dispatch', self.path)
+        if self.path == '/api/patients' or played or dispatch:
+            try:
+                data = self.read_json()
+                if played or dispatch:
+                    if data:
+                        raise ValueError('Expected an empty JSON object.')
+                    result = dispatch_social_request(DATABASE, int(dispatch[1])) if dispatch else mark_invitation_played(DATABASE, int(played[1]), int(played[2]))
+                else:
+                    result = save_patient(DATABASE, data)
+                self.send_json(200, result)
+            except (ValueError, UnicodeDecodeError) as error:
+                self.send_json(400, {'error': str(error)})
+            except sqlite3.Error:
+                self.send_json(503, {'error': 'Database unavailable.'})
+            return
+        if self.path.startswith('/api/voice/tools/'):
+            try:
+                data = self.read_json()
+                if not {'request_id', 'arguments'} <= set(data) or set(data) - {'request_id', 'arguments', 'patient_id'}:
+                    raise ValueError('Expected request_id, arguments, and optional patient_id.')
+                result = execute_tool(DATABASE, self.path.removeprefix('/api/voice/tools/'), data['arguments'], data['request_id'], data.get('patient_id', 1))
+                self.send_json(200, result)
+            except (ValueError, UnicodeDecodeError, ZoneInfoNotFoundError) as error:
+                self.send_json(400, {'error': str(error)})
+            except sqlite3.Error:
+                self.send_json(503, {'error': 'Database unavailable. Retry only with the same request_id.'})
+            return
         if self.path == '/api/reminder':
             try:
                 length = int(self.headers.get('Content-Length', '0'))
@@ -186,6 +227,26 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        inbox = re.fullmatch(r'/api/patients/([1-9]\d*)/invitations(/next)?', self.path)
+        if self.path in ('/api/patients', '/api/social/invitations') or inbox:
+            try:
+                if self.path == '/api/patients':
+                    result = list_patients(DATABASE)
+                elif inbox:
+                    rows = list_invitations(DATABASE, int(inbox[1]), bool(inbox[2]))
+                    result = {'invitation': rows[0] if rows else None} if inbox[2] else rows
+                else:
+                    result = list_invitations(DATABASE)
+                self.send_json(200, result)
+            except sqlite3.Error:
+                self.send_json(503, {'error': 'Database unavailable.'})
+            return
+        if self.path in ('/api/voice/tools', '/api/voice/requests'):
+            try:
+                self.send_json(200, TOOLS if self.path.endswith('/tools') else list_requests(DATABASE))
+            except sqlite3.Error:
+                self.send_json(503, {'error': 'Database unavailable.'})
+            return
         if self.path == '/':
             body, content_type, status = PAGE.encode(), 'text/html; charset=utf-8', 200
         elif self.path == '/api/reminder':
@@ -239,9 +300,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == '__main__':
-    with sqlite3.connect(DATABASE) as db:
-        db.execute('CREATE TABLE IF NOT EXISTS medication_events (id INTEGER PRIMARY KEY, taken_at_utc TEXT NOT NULL)')
-        db.execute('CREATE TABLE IF NOT EXISTS dashboard_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+    initialize_database(DATABASE)
     print('Dashboard and API listening on all network interfaces, port 8000', flush=True)
     try:
         ThreadingHTTPServer(('0.0.0.0', 8000), Handler).serve_forever()
