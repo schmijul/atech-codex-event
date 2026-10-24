@@ -10,6 +10,7 @@
 - Updated slot project documentation. The running API at 172.20.10.5 is still serving its previous process version; its GET `/api/events` works, but `/api/reminder` currently is not deployed. No settings or medication confirmation rows have been written as part of this implementation.
 - `atech validate .` passed and `atech build .` compiled the firmware (25.6% RAM, 32.3% flash). The first validate invocation used the wrong relative venv path; corrected it to `../.venv/bin` from the project directory. Python bytecode compilation also succeeded. Firmware has not been flashed because the API host has not loaded the new schedule endpoints yet.
 - Microphone subagent completed on isolated branch `codex/microphone-input` in `/tmp/atech-microphone-input`. The Atech SDK microphone module supports PCM recording/capture and sound-level readings on ports 5–6, but has no speech-to-text API; its branch adds the microphone module and level-event proof of concept. Validation/build passed there; no flash or API writes.
+- User asked to verify live microphone input. Board was found on `/dev/cu.usbmodem101`; flashed the microphone proof of concept from the isolated branch. `atech check` reported the microphone initialized (the module has no hardware read-back). Serial monitor then produced `microphone_level` values every 250 ms, typically about 70–340 in the room; while the user clapped/tapped, peaks rose to 628, 740, and 1142. This confirms the board receives sound through the microphone. Stopped the monitor, removed the temporary Wi-Fi secrets copy, and restored generated build outputs. No medication button was pressed and no database row was created.
 
 ## 2026-10-24 — Medication reminder
 
@@ -77,45 +78,3 @@
 - Dashboard still had only the pre-existing row, confirming the board has not produced a successful POST. Added serial `wifi_status` transitions and `meds_button` logs for read-only diagnosis; these do not write to the API. USB port is available for a monitor check.
 - Observed board button event in serial diagnostics, but Wi-Fi status alternated `1` (SSID unavailable) and `6` (disconnected), even after the user enabled iPhone Maximize Compatibility and firmware tried `iPhone von Julian` capitalization. The API database still contains only the original row. Replaced blind `WiFi.begin` retry with async visible-network scans, logging the visible AP count and whether the configured SSID (case-insensitive) is present; when found, connect using the broadcast spelling.
 - Final verification succeeded: scan found the hotspot among 24 visible networks; the firmware connected (status 3), observed the button event, and logged `meds_api_saved` (only on HTTP 201). Read-only GET showed new row id 2 at 2026-10-24T11:04:35+00:00. The SSID scan matched case-insensitively and connects using the exact broadcast spelling. No test POST was sent.
-
-## 2026-10-24 — Missing incoming updates
-
-- Checked SQLite directly and GET /api/events through localhost and Wi-Fi IP: all return the single original record, id 1 at 10:37:35 UTC.
-- Running server logs show repeated successful dashboard GETs and no incoming POST requests. Dashboard polling is working; no new API writes have reached this process.
-- Current firmware emits meds_taken over serial, with no Wi-Fi HTTP integration. No meds_logger.py process is running on this host. Asked which device/client is sending updates and for its HTTP response to identify the missing connection.
-
-- User confirmed the board has Wi-Fi and is on the same network. Fetched origin: no newer commits. The checked-in YAML and generated C++ contain no Wi-Fi/HTTP calls; they emit serial events only. No USB board device is present here, so the running firmware cannot be inspected directly from this host. Need the sending firmware or its HTTP response to continue tracing the board-to-API path.
-
-- Pulled commit 095300a (Send medication confirmations over Wi-Fi). Preserved both upstream firmware notes and local investigation notes when resolving the diary conflict. New firmware targets the correct API URL and uses JSON {}; prior serial-only diagnosis described the older checkout.
-
-- Rechecked missing button updates after pulling Wi-Fi firmware: server is bound to 0.0.0.0:8000, host still has 172.20.10.5, UFW is inactive, and nftables has no host-input blocking rules. Database still has one row and server logs contain no POSTs. Need board serial output/Wi-Fi status after a reset-confirm cycle to distinguish lack of association, request failure, and suppressed repeat confirmations. No local USB device is available for direct inspection.
-
-## 2026-10-24 — Pull latest changes
-
-- Fast-forwarded main from 095300a to 2ba5e10. Initial pull was blocked by local diary and SQLite edits; saved them in a Git stash before pulling.
-- Combined upstream and local diary additions. Restored the local medication database without merging event records; both original database versions are backed up at /tmp/atech-pull-backup-tqcg948j/ and the stash remains available.
-- Python is available as python3; the initial python backup command failed before the successful python3 backup. A bytes-literal encoding error interrupted the first diary resolution script; corrected it with UTF-8 encoding and verified the final diff.
-
-## 2026-10-24 — Show the reminder button
-
-- The running dashboard predates the pulled reminder controls: GET / has no schedule form and GET /api/reminder returns 404. The latest source already implements daily reminder persistence and board polling endpoints.
-- Renamed the submit button to “Set reminder”, made its submit type explicit, and removed the obsolete footer claim that no schedule is configured. Updated the usage instructions to match.
-- Verified set/read/board-schedule/disable endpoints against a temporary database without adding medication events. Restarted dashboard.py and reloaded the existing browser tab; confirmed the Daily reminder time field, Set reminder button, Turn off button, and disabled-schedule status are visible. No live reminder time was chosen.
-
-## 2026-10-24 — Person picker
-
-- User wants the starting page to select a person, with only the existing patient available for now. Used the minimalist UI skill to keep the current warm monochrome style.
-- Added a single Patient 1 link at /, moved the existing medication dashboard to /patients/1, and added an All people return link plus patient context in the title/header. Shared the existing CSS between the two pages in the same Python file.
-- Kept the current SQLite history, reminder settings, and board API endpoints. Additional patients and data separation are outside this one-person step; no invented patient identity or registration UI.
-- Verified Python compilation and whitespace checks, restarted the dashboard, and exercised the browser round trip from picker to Patient 1 and back. Existing four confirmations, reminder controls, and timezone rendered correctly; left the browser on the picker. Saved a visual preview at /tmp/atech-person-picker.png.
-
-## 2026-10-24 — Push dashboard updates
-
-- Reviewed the person picker, patient dashboard navigation, Set reminder label, and usage documentation. Fetched origin/main and confirmed no divergence. Python compilation, whitespace validation, live page routes, and read-only API checks passed.
-- Committing the dashboard source, documentation, and diary for push to main. Keeping the locally modified runtime medication database uncommitted.
-
-## 2026-10-24 — Exposed ElevenLabs credential
-
-- User asked whether the ElevenLabs key was pushed. Confirmed a populated ELEVENLABS_API_KEY in tracked .env matches the value on origin/main, introduced by commit 442d40d before the dashboard changes. Never printed the secret value.
-- GitHub metadata confirms this repository is public. The key must be revoked in ElevenLabs; deleting a file cannot revoke a credential or erase prior downloads/history.
-- Removing .env from Git tracking while preserving the local file, and ignoring .env variants except .env.example. This cleanup leaves historical commits intact; history rewriting requires separate coordination with other checkouts.

@@ -33,7 +33,7 @@ static inline int postMedsTakenToApi() {
     WiFiClient client;
     HTTPClient request;
     request.setTimeout(3000);
-    if (!request.begin(client, "http://172.20.10.5:8000/api/events")) return -1000;
+    if (!request.begin(client, "http://172.20.10.14:8000/api/events")) return -1000;
     request.addHeader("Content-Type", "application/json");
     int status = request.POST("{}");
     request.end();
@@ -44,7 +44,7 @@ static inline int getReminderScheduleFromApi(long &scheduledEpoch, long &serverE
     WiFiClient client;
     HTTPClient request;
     request.setTimeout(3000);
-    if (!request.begin(client, "http://172.20.10.5:8000/api/reminder/next")) return -1000;
+    if (!request.begin(client, "http://172.20.10.14:8000/api/reminder/next")) return -1000;
     int status = request.GET();
     if (status != 200) {
         request.end();
