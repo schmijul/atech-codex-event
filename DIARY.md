@@ -1,5 +1,14 @@
 # Development diary
 
+## 2026-10-24 — Microphone input proof of concept
+
+- Created isolated branch `codex/microphone-input` in `/tmp/atech-microphone-input`; the primary worktree has unrelated local edits and was not modified.
+- Inspected the installed SDK catalog (`atech list-modules`, `atech info microphone`, and `atech info speaker`). The exact microphone module is ICS-43434, spans adjacent ports 5 and 6, starts a background capture task on I2S_NUM_1, and emits RMS sound level as `microphone_level` every 250 ms. Speaker on ports 3–4 uses I2S_NUM_0, so the buses do not conflict.
+- The module API also exposes `startRecording()`, `stopRecording()`, `isRecording()`, `getRecording()` and `getRecordingLength()` for up to 3 seconds of PCM capture. The SDK does not include speech recognition or a live audio-to-host stream; audio transcription requires an additional host/service path.
+- Added the catalog microphone module at ports [5, 6]. Its template automatically reports sound levels, so no custom loop code or behavior changes to the medication buttons are necessary. This is an audio-input/sound activity proof of concept, not speech-to-text.
+- `atech validate slot-8-display` passed with the microphone placement. The first build lacked the ignored local `.wifi_secrets.h`; temporarily copied that local file for compilation, then removed it. The subsequent PlatformIO build succeeded (25.9% RAM, 31.9% flash). Restored generated `build/` outputs afterward so only source and diary changes remain. No board flash or API write was made.
+- Follow-up hardware check: flashed this proof-of-concept to the connected board at `/dev/cu.usbmodem101`. `atech check` reported the microphone initialized (no module read-back is available). The serial monitor streamed `microphone_level` every 250 ms: quiet room readings were usually 70–340, and while the user clapped/tapped the peaks reached 628, 740, and 1142. This verifies sound input on the attached module. No medication button was pressed and no API POST occurred. Stopped the monitor, removed the temporary Wi-Fi secrets copy, and restored generated build artifacts.
+
 ## 2026-10-24 — Medication reminder
 
 - Request: display “Have you taken your meds?”, play a reminder sound, and show “Meds taken” after a button press.
@@ -66,3 +75,12 @@
 - Dashboard still had only the pre-existing row, confirming the board has not produced a successful POST. Added serial `wifi_status` transitions and `meds_button` logs for read-only diagnosis; these do not write to the API. USB port is available for a monitor check.
 - Observed board button event in serial diagnostics, but Wi-Fi status alternated `1` (SSID unavailable) and `6` (disconnected), even after the user enabled iPhone Maximize Compatibility and firmware tried `iPhone von Julian` capitalization. The API database still contains only the original row. Replaced blind `WiFi.begin` retry with async visible-network scans, logging the visible AP count and whether the configured SSID (case-insensitive) is present; when found, connect using the broadcast spelling.
 - Final verification succeeded: scan found the hotspot among 24 visible networks; the firmware connected (status 3), observed the button event, and logged `meds_api_saved` (only on HTTP 201). Read-only GET showed new row id 2 at 2026-10-24T11:04:35+00:00. The SSID scan matched case-insensitively and connects using the exact broadcast spelling. No test POST was sent.
+
+## 2026-10-24 — Voice assistant bridge
+
+- User asked to route voice commands from the board through a model and play the response on its speaker, using the OpenAI API for speech-to-text.
+- Added a small standard-library LAN server at `voice_assistant.py`: accepts up to 3 seconds of 16 kHz mono PCM, wraps it as WAV for `gpt-transcribe`, asks `gpt-6-luna` for a short reply, generates PCM speech, downsamples 24 kHz output to the board's 16 kHz speaker rate, and returns raw PCM. The API key is read only from the host's `OPENAI_API_KEY` environment.
+- Wired firmware voice activity capture to the microphone on ports 5–6. It starts at a measured sound-level threshold, stops after 900 ms of quiet or the microphone's 3-second cap, POSTs audio to the host at `172.20.10.2:8001`, and streams the returned samples into the speaker on ports 3–4. It requires at least 0.75 seconds of captured audio and has an 8-second cooldown.
+- Reference: OpenAI docs recommend `gpt-transcribe` for completed audio files and document the Speech API's raw PCM as 24 kHz signed 16-bit little-endian. `gpt-4o-mini-tts` remains usable but is deprecated for shutdown on 2027-01-06; plan migration to Realtime before then.
+- The host currently has no `OPENAI_API_KEY` environment variable. A live transcription/model/TTS round trip cannot be verified until the user starts the service in a terminal with a configured key. Do not ask the user to paste the key into chat.
+- Validated the YAML, compiled the host script, built the firmware, and uploaded it to `/dev/cu.usbmodem101`. `atech check` reports display, speaker, microphone, and both buttons initialized; live Wi-Fi status reached connected (3). A compiler warning showed that 90,000 ms overflowed the board HTTP timeout type; changed it to 60,000 ms and rebuilt/uploaded. No OpenAI request was made because the host key is missing.

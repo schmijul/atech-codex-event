@@ -4,6 +4,7 @@ modules_path: ./my_modules
 modules:
   - {id: st7735_tft, instance: display, ports: [13, 14]}
   - {id: speaker, instance: speaker, ports: [3, 4]}
+  - {id: microphone, instance: microphone, ports: [5, 6]}
   - {id: button, instance: button, port: 9}
   - {id: button, instance: resetButton, port: 1}
 code:
@@ -172,4 +173,53 @@ code:
     if (atech_action == "display_status") {
       Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"state\",\"key\":\"display_text\",\"value\":\"%s\"}}\n", medsTaken ? "Meds taken" : "Have you taken your meds?");
       atechDone();
+    }
+
+    // Hands-free short utterances: begin on speech level, then stop after quiet.
+    static bool voiceRecording = false;
+    static unsigned long voiceLastSound = 0;
+    static unsigned long voiceCooldown = 0;
+    int16_t voiceLevel = microphone.getSoundLevel();
+    if (!voiceRecording && wifiStatus == WL_CONNECTED &&
+        now - voiceCooldown >= 8000UL && voiceLevel >= 400 && !speaker.isPlaying()) {
+      microphone.startRecording();
+      voiceRecording = microphone.isRecording();
+      voiceLastSound = now;
+      if (voiceRecording) Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"voice_listening\",\"value\":true}}");
+    }
+    if (voiceRecording) {
+      if (voiceLevel >= 400) voiceLastSound = now;
+      if (!microphone.isRecording() || now - voiceLastSound >= 900UL) {
+        microphone.stopRecording();
+        voiceRecording = false;
+        voiceCooldown = now;
+        int sampleCount = microphone.getRecordingLength();
+        if (sampleCount >= 12000) {
+          const int16_t* audio = microphone.getRecording();
+          WiFiClient voiceClient;
+          HTTPClient voiceRequest;
+          voiceRequest.setTimeout(60000);
+          if (voiceRequest.begin(voiceClient, "http://172.20.10.2:8001/api/voice")) {
+            voiceRequest.addHeader("Content-Type", "application/octet-stream");
+            int voiceStatus = voiceRequest.POST((uint8_t*)audio, sampleCount * sizeof(int16_t));
+            if (voiceStatus == 200) {
+              WiFiClient* response = voiceRequest.getStreamPtr();
+              int remaining = voiceRequest.getSize();
+              int16_t speechChunk[256];
+              speaker.stop();
+              while (remaining >= 2 && response->connected()) {
+                int requestedBytes = min((int)sizeof(speechChunk), remaining) & ~1;
+                int receivedBytes = response->readBytes((char*)speechChunk, requestedBytes);
+                if (receivedBytes <= 0) break;
+                speaker.writeSamples(speechChunk, receivedBytes / sizeof(int16_t));
+                remaining -= receivedBytes;
+              }
+              Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"voice_reply_played\",\"value\":true}}");
+            } else {
+              Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"voice_api_status\",\"value\":%d}}\n", voiceStatus);
+            }
+            voiceRequest.end();
+          }
+        }
+      }
     }
