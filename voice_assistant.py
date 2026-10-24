@@ -15,18 +15,40 @@ import wave
 from array import array
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from voice_tools import TOOLS
 
 HOST = "0.0.0.0"
 PORT = 8001
 SAMPLE_RATE = 16000
 MAX_AUDIO_BYTES = SAMPLE_RATE * 2 * 3
 OPENAI_BASE = "https://api.openai.com/v1"
+BACKEND_URL = "http://127.0.0.1:8000"
 SESSION_FILE = Path(__file__).with_name(".voice_session.json")
 MAX_HISTORY_MESSAGES = 40
 has_disclosed_voice = False
 conversation_history = []
 last_activity = 0
 conversation_lock = threading.Lock()
+SYSTEM_PROMPT = Path(__file__).with_name("system_prompt.md").read_text()
+
+
+def call_backend(tool_call):
+    function = tool_call["function"]
+    body = json.dumps({"request_id": tool_call["id"], "patient_id": 1,
+                       "arguments": json.loads(function["arguments"])}).encode()
+    request = urllib.request.Request(
+        BACKEND_URL + "/api/voice/tools/" + function["name"], data=body,
+        headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            result = json.loads(response.read())
+        print("tool:", function["name"], "result:", result, flush=True)
+        return result
+    except (urllib.error.URLError, TimeoutError):
+        return {"error": "Action could not be confirmed. Do not claim success or retry; check the dashboard."}
 
 
 def openai_request(path, data, content_type):
@@ -128,14 +150,25 @@ def create_voice_reply(transcript):
         "messages": [
             {
                 "role": "system",
-                "content": disclosure + "You are a helpful voice assistant for an older adult. Answer directly in one natural sentence of 15 words or fewer. When the user shares or corrects a personal fact, repeat it accurately to confirm it. Treat the latest correction as authoritative. Speak promptly, clearly, and warmly. Do not claim to have changed devices, medication records, or external data unless you actually did so.",
+                "content": disclosure + SYSTEM_PROMPT + "\nKeep replies to one or two short sentences. Preserve personal facts exactly. Current local time: " + datetime.now(ZoneInfo("Europe/Berlin")).isoformat(timespec="minutes") + ". Timezone: Europe/Berlin.",
             },
             *conversation_history,
             user_message,
         ],
-    }).encode()
-    result = json.loads(openai_request("/chat/completions", request_body, "application/json"))
-    audio = result["choices"][0]["message"]["audio"]
+    })
+    request_data = json.loads(request_body)
+    request_data.update(tools=TOOLS, parallel_tool_calls=False)
+    for round_number in range(3):
+        request_data["tool_choice"] = "none" if round_number == 2 else "auto"
+        result = json.loads(openai_request("/chat/completions", json.dumps(request_data).encode(), "application/json"))
+        message = result["choices"][0]["message"]
+        calls = message.get("tool_calls") or []
+        if not calls:
+            break
+        request_data["messages"].append({"role": "assistant", "content": message.get("content"), "tool_calls": calls})
+        for call in calls:
+            request_data["messages"].append({"role": "tool", "tool_call_id": call["id"], "content": json.dumps(call_backend(call))})
+    audio = message["audio"]
     transcript = audio.get("transcript", "").strip()
     wav_data = base64.b64decode(audio["data"])
     with wave.open(io.BytesIO(wav_data), "rb") as wav:

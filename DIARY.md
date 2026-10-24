@@ -151,3 +151,15 @@
 - Verified both OpenAI paths in an isolated temporary test session without modifying live memory: the audio model generated 110,400 PCM bytes in 2.43s and the transcription endpoint correctly read the generated phrase. Both local voice and dashboard endpoints respond over the hotspot IP.
 - Validated and uploaded the firmware without the encoder. `atech check` reports display, speaker, microphone, and both buttons initialized; free heap increased to 192,044 bytes. Serial monitoring confirmed hotspot visibility and connected Wi-Fi status 3.
 - Live user test passed end to end: the board at 172.20.10.2 sent 37,376 samples; the host transcribed exactly “Hello, can you hear me?” in 1.07s, generated the response in 2.53s, and returned HTTP 200. The board then logged `voice_reply_played: true`. Speaker volume remains fixed at 100%.
+
+## 2026-10-24 — Voice acceptance test instructions
+
+- Checked current service readiness before giving the user a test sequence: LaunchAgent running, voice health HTTP 200, and host IP still 172.20.10.14. Planned checks cover microphone accuracy, spoken clarity, follow-up context, name corrections, inactivity, board power cycling, host restart, and explicitly ending the conversation.
+- Confirmed the voice handler has no function tools for live weather, reminders, or medication records. Recent logs include a fabricated current-weather answer despite no weather lookup. Such answers do not demonstrate a working tool; the test instructions explicitly distinguish enabled conversation features from unavailable external actions.
+
+## 2026-10-24 — Connect presentation voice tools end to end
+
+- Integrated the four function definitions/backend actions from codex/voice-agent-tools into the permanent voice bridge while preserving text transcription, saved memory, fixed volume, and the firmware without a knob. The model now calls the local backend and reads its result before speaking.
+- Added the tool APIs to the current local dashboard while preserving the user's existing staff view, alert handling, and other dashboard changes. Added a Voice requests panel on both / and /staff with two-second polling. Help requests also create an open staff alert in the same SQLite transaction, with repeated request IDs retaining the existing deduplication.
+- Live board test: “Please help me stand up.” was transcribed correctly; request_help wrote request id 2 and staff alert id 2. The speech response acknowledged the recorded request. Verified the actual help text in the browser's staff alert list and Voice requests panel. The backend records a request; it does not contact staff outside the dashboard.
+- Ran eight backend regression tests against the integrated dashboard using a temporary database: all passed. Also tested a real OpenAI function call and the user's full microphone-to-dashboard path. No medication confirmations were written to the live database during verification.
