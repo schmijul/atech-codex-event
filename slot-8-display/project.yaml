@@ -5,18 +5,12 @@ modules:
   - {id: st7735_tft, instance: display, ports: [13, 14]}
   - {id: speaker, instance: speaker, ports: [3, 4]}
   - {id: microphone, instance: microphone, ports: [5, 6]}
-  - {id: rotary_encoder, instance: volumeKnob, ports: [10, 11]}
   - {id: button, instance: button, port: 9}
   - {id: button, instance: resetButton, port: 1}
 code:
   setup: |
     display.setDirectMode(true);
     speaker.setVolume(1.0f);
-    volumeKnob.setAcceleration(false, 1);
-    volumeKnob.resetPosition();
-    volumeKnob.setRingColor(0, 180, 60);
-    volumeKnob.setRingBrightness(50);
-    volumeKnob.setRingPosition(11.0f);
     WiFi.mode(WIFI_STA);
   loop: |
     static bool medsTaken = false;
@@ -37,33 +31,7 @@ code:
     static bool voiceRecording = false;
     static bool voiceButtonStartPending = false;
     static bool voiceStopRequested = false;
-    static int32_t lastKnobPosition = 0;
     static String voiceApiUrl = "http://172.20.10.14:8001/api/voice";
-    static String voiceEndUrl = "http://172.20.10.14:8001/api/voice/end";
-
-    volumeKnob.update();
-    int32_t knobPosition = volumeKnob.getPosition();
-    if (knobPosition != lastKnobPosition) {
-      lastKnobPosition = knobPosition;
-      speaker.setVolume(1.0f);
-      volumeKnob.setRingPosition(11.0f);
-      Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"volume_knob_position\",\"value\":%ld}}\n", (long)knobPosition);
-    }
-    if (volumeKnob.wasPressed() && WiFi.status() == WL_CONNECTED) {
-      WiFiClient endClient;
-      HTTPClient endRequest;
-      endRequest.setTimeout(3000);
-      if (endRequest.begin(endClient, voiceEndUrl)) {
-        int endStatus = endRequest.POST((uint8_t*)nullptr, 0);
-        if (endStatus == 204) {
-          speaker.playTone(NOTE_C4, 120);
-          Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"voice_conversation_ended\",\"value\":true}}");
-        } else {
-          Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"voice_end_status\",\"value\":%d}}\n", endStatus);
-        }
-        endRequest.end();
-      }
-    }
 
     int wifiStatus = WiFi.status();
     if (wifiStatus != lastWifiStatus) {
@@ -255,7 +223,6 @@ code:
     // Hold button 1 to record; releasing it sends the captured speech.
     if (atech_action == "voice_host") {
       voiceApiUrl = "http://" + atech_value + ":8001/api/voice";
-      voiceEndUrl = "http://" + atech_value + ":8001/api/voice/end";
       atechDone();
     }
     unsigned long voiceNow = millis();

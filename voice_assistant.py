@@ -176,7 +176,7 @@ class VoiceHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/api/voice/end":
             with conversation_lock:
-                clear_session("knob pressed")
+                clear_session("end endpoint requested")
             self.send_response(204)
             self.end_headers()
             return
