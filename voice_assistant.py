@@ -9,6 +9,7 @@ import urllib.error
 import urllib.request
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 HOST = "0.0.0.0"
 PORT = 8001
@@ -55,6 +56,7 @@ def assistant_reply(transcript):
     global has_disclosed_voice
     request_body = json.dumps({
         "model": "gpt-6-luna",
+        "reasoning": {"effort": "none"},
         "instructions": "You are a helpful, calm voice assistant for an older adult. Reply in one or two short spoken sentences. Do not claim to have changed devices, medication records, or external data unless a tool actually did so.",
         "input": transcript,
         "max_output_tokens": 100,
@@ -84,8 +86,11 @@ def create_speech(text):
     samples_24k = memoryview(pcm_24k).cast("h")
     samples_16k = bytearray()
     for index in range(0, len(samples_24k) - 2, 3):
-        sample = (samples_24k[index] + samples_24k[index + 1] + samples_24k[index + 2]) // 3
-        samples_16k.extend(int(sample).to_bytes(2, "little", signed=True))
+        # Two output samples for every three input samples: 24 kHz -> 16 kHz.
+        first = samples_24k[index]
+        second = (samples_24k[index + 1] + samples_24k[index + 2]) // 2
+        samples_16k.extend(int(first).to_bytes(2, "little", signed=True))
+        samples_16k.extend(int(second).to_bytes(2, "little", signed=True))
     return bytes(samples_16k)
 
 
@@ -124,7 +129,6 @@ class VoiceHandler(BaseHTTPRequestHandler):
             speech = create_speech(reply)
             self.send_response(200)
             self.send_header("Content-Type", "application/octet-stream")
-            self.send_header("X-Transcript", transcript[:160].encode("ascii", "ignore").decode())
             self.send_header("Content-Length", str(len(speech)))
             self.end_headers()
             self.wfile.write(speech)
@@ -137,6 +141,13 @@ class VoiceHandler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    # Read a local ignored .env beside the script or in the current directory.
+    for env_path in (Path(__file__).with_name(".env"), Path.cwd() / ".env"):
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                if "=" in line and not line.lstrip().startswith("#"):
+                    key, value = line.split("=", 1)
+                    os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
     if not os.environ.get("OPENAI_API_KEY"):
         raise SystemExit("Set OPENAI_API_KEY in this terminal before starting the voice bridge.")
     print(f"Voice bridge listening on http://0.0.0.0:{PORT}", flush=True)

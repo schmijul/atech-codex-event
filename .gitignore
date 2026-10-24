@@ -1,3 +1,6 @@
 __pycache__/
 *.py[cod]
+.env
+.env.*
+!.env.example
 slot-8-display/.wifi_secrets.h

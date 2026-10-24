@@ -22,6 +22,10 @@ code:
     static unsigned long lastReminder = 0;
     static unsigned long lastApiAttempt = 0;
     static unsigned long lastWifiScan = 0;
+    static bool voiceRecording = false;
+    static unsigned long voiceLastSound = 0;
+    static unsigned long voiceCooldown = 0;
+    static String voiceApiUrl = "http://172.20.10.3:8001/api/voice";
 
     int wifiStatus = WiFi.status();
     if (wifiStatus != lastWifiStatus) {
@@ -165,6 +169,7 @@ code:
         }
       }
       speaker.writeSamples(decodedSpeech, sample);
+      voiceCooldown = millis();
       lastReminder = now;
       reminderStarted = true;
       Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"meds_reminder\",\"value\":\"Have you taken your meds?\"}}");
@@ -176,30 +181,32 @@ code:
     }
 
     // Hands-free short utterances: begin on speech level, then stop after quiet.
-    static bool voiceRecording = false;
-    static unsigned long voiceLastSound = 0;
-    static unsigned long voiceCooldown = 0;
+    if (atech_action == "voice_host") {
+      voiceApiUrl = "http://" + atech_value + ":8001/api/voice";
+      atechDone();
+    }
+    unsigned long voiceNow = millis();
     int16_t voiceLevel = microphone.getSoundLevel();
     if (!voiceRecording && wifiStatus == WL_CONNECTED &&
-        now - voiceCooldown >= 8000UL && voiceLevel >= 400 && !speaker.isPlaying()) {
+        voiceNow - voiceCooldown >= 8000UL && voiceLevel >= 400 && !speaker.isPlaying()) {
       microphone.startRecording();
       voiceRecording = microphone.isRecording();
-      voiceLastSound = now;
+      voiceLastSound = voiceNow;
       if (voiceRecording) Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"voice_listening\",\"value\":true}}");
     }
     if (voiceRecording) {
-      if (voiceLevel >= 400) voiceLastSound = now;
-      if (!microphone.isRecording() || now - voiceLastSound >= 900UL) {
+      if (voiceLevel >= 400) voiceLastSound = voiceNow;
+      if (!microphone.isRecording() || voiceNow - voiceLastSound >= 900UL) {
         microphone.stopRecording();
         voiceRecording = false;
-        voiceCooldown = now;
+        voiceCooldown = voiceNow;
         int sampleCount = microphone.getRecordingLength();
         if (sampleCount >= 12000) {
           const int16_t* audio = microphone.getRecording();
           WiFiClient voiceClient;
           HTTPClient voiceRequest;
           voiceRequest.setTimeout(60000);
-          if (voiceRequest.begin(voiceClient, "http://172.20.10.2:8001/api/voice")) {
+          if (voiceRequest.begin(voiceClient, voiceApiUrl)) {
             voiceRequest.addHeader("Content-Type", "application/octet-stream");
             int voiceStatus = voiceRequest.POST((uint8_t*)audio, sampleCount * sizeof(int16_t));
             if (voiceStatus == 200) {
@@ -214,12 +221,13 @@ code:
                 speaker.writeSamples(speechChunk, receivedBytes / sizeof(int16_t));
                 remaining -= receivedBytes;
               }
-              Serial.println("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"voice_reply_played\",\"value\":true}}");
+              Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"voice_reply_played\",\"value\":%s}}\n", remaining < 2 ? "true" : "false");
             } else {
               Serial.printf("{\"type\":\"event\",\"payload\":{\"event_type\":\"log\",\"key\":\"voice_api_status\",\"value\":%d}}\n", voiceStatus);
             }
             voiceRequest.end();
           }
         }
+        voiceCooldown = millis();
       }
     }

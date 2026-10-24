@@ -4,14 +4,13 @@ The board listens for nearby speech, records up to 3 seconds, and sends it over 
 
 ## Start the host service
 
-Connect this computer and the board to the same hotspot. On the computer, set an OpenAI API key in the terminal without putting it in the firmware or chat, then start the service:
+Connect this computer and the board to the same hotspot. Put `OPENAI_API_KEY` in the local ignored `.env`, then start the service from that directory. The service also accepts an exported environment variable.
 
 ```sh
-export OPENAI_API_KEY='your-key'
 python3 voice_assistant.py
 ```
 
-The service listens on port 8001. The firmware currently targets `172.20.10.2`, the computer's hotspot address. If that address changes, update the `/api/voice` URL in `slot-8-display/project.yaml` and rebuild/upload.
+The service listens on port 8001. The firmware currently targets `172.20.10.3`, the computer's hotspot address. If that address changes, configure it over USB with `atech send voice_host 172.20.10.3` (replace the address). This setting lasts until the board restarts. Update the default `/api/voice` URL in `slot-8-display/project.yaml` for a permanent change.
 
 ## Use it
 
