@@ -25,61 +25,64 @@ PAGE = '''<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Medication log</title>
 <style>
-:root{--bg:#f7f6f3;--ink:#2f3437;--muted:#787774;--card:#fff;--line:#e8e6e1;--good-bg:#edf3ec;--good:#346538;--bad:#9f2f2d;--bad-bg:#f8eeee}
+:root{color-scheme:light;--fg:#1d2420;--muted:#5f6b64;--line:#dde3de;--bg:#fff;--soft:#f4f6f4;--red:#b3261e;--amber:#8a5a00;--green:#2e7d32;--blue:#1e4fd8}
 *{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
-body{margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg)}
-main{max-width:1024px;margin:0 auto;padding:56px 28px 64px}
-.top{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:32px}
-.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
-h1{font:normal 44px/1.05 Georgia,'Times New Roman',serif;letter-spacing:-.02em;margin:10px 0 8px}
-.sub{color:var(--muted);line-height:1.6;margin:0 0 14px;max-width:60ch}
-.nav{display:flex;gap:8px;margin-top:14px}
-.nav a{font-size:13px;color:var(--ink);text-decoration:none;border:1px solid var(--line);background:var(--card);padding:8px 14px;border-radius:999px}
-.nav a[aria-current="page"]{background:var(--ink);border-color:var(--ink);color:#fff}
-button{font:inherit;background:var(--ink);color:#fff;border:0;border-radius:6px;padding:11px 18px;cursor:pointer;white-space:nowrap}
-button:disabled{opacity:.4;cursor:default}button:hover:enabled{background:#4a4f52}
-button.secondary{background:#eceae6;color:var(--ink)}
-#error{color:var(--bad);font-size:13px;margin-bottom:12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:20px}
-.pad{padding:24px}
-.section-head{padding:20px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line)}
-h2{font-size:17px;font-weight:600;margin:0}
-.card p,.card .hint{color:var(--muted);line-height:1.6;font-size:14px}
-.card p{margin:0 0 4px}
-form.row{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin-top:16px}
-label.field{display:grid;gap:6px;font-size:12px;color:var(--muted)}
-input,select{font:inherit;color:var(--ink);padding:10px 12px;border:1px solid #d9d7d2;border-radius:6px;background:#fff}
-.status-line{font-size:13px;margin:12px 0 0;color:var(--muted)}
-.metrics{display:grid;grid-template-columns:1fr 1fr 1.5fr;background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:20px;overflow:hidden}
-.metric{padding:24px 28px;border-right:1px solid var(--line)}.metric:last-child{border:0}
-.value{font-size:32px;margin-top:12px;letter-spacing:-.02em}
-table{width:100%;border-collapse:collapse;text-align:left}
-th{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:600}
-th,td{padding:15px 24px;border-top:1px solid var(--line)}td{font-size:14px}
-tbody tr:first-child td,tbody tr:first-child th{border-top:0}
-thead th{border-top:0}
-.tag,.status{display:inline-block;background:var(--good-bg);color:var(--good);padding:4px 10px;border-radius:999px;font-size:12px}
-.alert-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 24px;border-top:1px solid var(--line)}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:16px 16px 48px;display:flex;flex-direction:column;gap:20px}
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:8px}
+.eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+h1{font-size:22px;margin:4px 0 0;font-weight:700}
+.sub{color:var(--muted);font-size:13px;margin:2px 0 0}
+.nav{display:flex;gap:8px;margin-top:10px}
+.nav a{font-size:14px;color:var(--fg);text-decoration:none;border:1px solid #b7beb9;background:#fff;padding:6px 12px;border-radius:6px;min-height:36px;display:inline-flex;align-items:center}
+.nav a[aria-current="page"]{background:var(--fg);border-color:var(--fg);color:#fff}
+button{font:inherit;font-size:14px;padding:6px 12px;border:1px solid #b7beb9;background:#fff;border-radius:6px;cursor:pointer;min-height:36px;color:var(--fg)}
+button:hover:enabled{background:var(--soft)}
+button:disabled{opacity:.5;cursor:default}
+button.primary{background:var(--fg);color:#fff;border-color:var(--fg)}
+button.primary:hover:enabled{background:#333}
+button.secondary{background:#fff}
+button:focus-visible,.nav a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+#error,#message{color:var(--red);font-size:13px;min-height:1em}
+.muted{color:var(--muted);font-size:13px}
+.card{display:flex;flex-direction:column;gap:6px}
+.pad{display:flex;flex-direction:column;gap:8px}
+.section-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+h2{font-size:17px;margin:0}
+.card p{margin:0;color:var(--muted);font-size:14px}
+form.row{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
+label.field{display:flex;flex-direction:column;gap:3px;font-size:13px;color:var(--muted)}
+input,select{font:inherit;font-size:14px;padding:6px 8px;border:1px solid #b7beb9;border-radius:6px;min-height:36px;background:#fff;color:var(--fg)}
+.status-line{font-size:13px;color:var(--muted);margin:0}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.metric{border:1px solid var(--line);border-radius:8px;padding:12px}
+.value{display:block;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:2px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600}
+.tag,.status{color:var(--green);font-weight:600;font-size:13px}
+.alert-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid #e9b4ae;background:#fdf1ef;border-radius:8px;margin-top:8px}
 .alert-actions{display:flex;gap:8px}
-.test-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:16px 24px;border-top:1px solid var(--line)}
-.test-actions button{background:#6c6c66}
-.family p{color:var(--ink);white-space:pre-line;font-size:14px}
-.empty{padding:24px;color:var(--muted);font-size:14px;border-top:1px solid var(--line)}
-footer.meta{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-top:20px;font-size:12px;color:var(--muted)}
-.controls{display:flex;gap:8px}.controls button{padding:8px 12px}
-.voice-item{padding:16px 0;border-top:1px solid var(--line)}
+.test-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:4px 0}
+.family p{color:var(--fg)}
+.empty{color:var(--muted);font-size:14px;padding:8px 0}
+footer.meta{font-size:12px;color:var(--muted);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+#updated{font-size:13px;color:var(--muted)}
+.controls{display:flex;gap:8px}
+.voice-item{padding:10px 0;border-top:1px solid var(--line)}
 .voice-item:first-of-type{border-top:0}
-.voice-item p{margin:6px 0}
-.lunch-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.voice-item p{margin:4px 0}
+.lunch-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .note{font-size:12px;color:var(--muted)}
-@media(max-width:640px){main{padding:32px 16px 48px}h1{font-size:34px}.top{flex-direction:column}.metrics{grid-template-columns:1fr}.metric{border-right:0;border-bottom:1px solid var(--line)}.metric:last-child{border-bottom:0}th,td{padding:13px 12px}.section-head,.pad{padding:18px 16px}footer.meta{flex-wrap:wrap}.alert-row{flex-direction:column;align-items:flex-start}.lunch-grid{grid-template-columns:1fr}}
+@media(max-width:640px){main{padding:12px 12px 40px}h1{font-size:20px}.alert-row{flex-direction:column;align-items:flex-start}.lunch-grid{grid-template-columns:1fr}}
+.pad>button{align-self:flex-start}
 </style>
 </head><body><main>
 <header class="top"><div><div class="eyebrow">Atech / Home assistant</div><h1>Medication log</h1><p class="sub">Button confirmations, recorded as they happen.</p><nav class="nav" aria-label="Views"><a href="/" aria-current="page">Medication log</a><a href="/staff">Staff view</a></nav></div><button id="refresh">Refresh</button></header>
 <div id="error" role="status"></div>
-<section class="card"><div class="section-head"><h2>Daily reminder</h2></div><div class="pad"><p>Choose when the board should start its medication reminder. The time uses this browser’s local timezone: <span id="schedule-zone"></span>.</p><form class="row" id="schedule-form"><label class="field">Start time<input id="reminder-time" type="time" required></label><button id="save-reminder">Save reminder</button><button id="disable-reminder" class="secondary" type="button">Turn off</button></form><p class="status-line" id="schedule-status" role="status">Loading reminder…</p></div></section>
+<section class="card"><div class="section-head"><h2>Daily reminder</h2></div><div class="pad"><p>Choose when the board should start its medication reminder. The time uses this browser’s local timezone: <span id="schedule-zone"></span>.</p><form class="row" id="schedule-form"><label class="field">Start time<input id="reminder-time" type="time" required></label><button class="primary" id="save-reminder">Save reminder</button><button id="disable-reminder" class="secondary" type="button">Turn off</button></form><p class="status-line" id="schedule-status" role="status">Loading reminder…</p></div></section>
 <div class="metrics"><div class="metric"><div class="eyebrow">Today</div><div class="value" id="today">—</div></div><div class="metric"><div class="eyebrow">All confirmations</div><div class="value" id="total">—</div></div><div class="metric"><div class="eyebrow">Last recorded</div><div class="value" id="latest">—</div></div></div>
-<section class="card"><div class="section-head"><h2>Confirmation history</h2><span class="eyebrow">Newest first</span></div><table><thead><tr><th>ID</th><th>Date & time</th><th>Event</th></tr></thead><tbody id="rows"></tbody></table><div class="empty" id="empty" hidden>No confirmations yet. Start the logger and press the medication button to record one.</div></section>
+<section class="card"><div class="section-head"><h2>Confirmation history</h2><span class="muted">Newest first</span></div><table><thead><tr><th>ID</th><th>Date & time</th><th>Event</th></tr></thead><tbody id="rows"></tbody></table><div class="empty" id="empty" hidden>No confirmations yet. Start the logger and press the medication button to record one.</div></section>
 <footer class="meta"><span id="status">Reading meds_taken.sqlite3…</span><div class="controls"><button id="prev">Previous</button><button id="next">Next</button></div></footer>
 <p class="note">Times shown in <span id="zone"></span>. A confirmation records a button press; no medication schedule is configured.</p>
 <script>
@@ -148,66 +151,65 @@ STAFF_PAGE = '''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tagly · Staff</title>
 <style>
-:root{--bg:#f7f6f3;--ink:#2f3437;--muted:#787774;--card:#fff;--line:#e8e6e1;--good-bg:#edf3ec;--good:#346538;--bad:#9f2f2d;--bad-bg:#f8eeee}
+:root{color-scheme:light;--fg:#1d2420;--muted:#5f6b64;--line:#dde3de;--bg:#fff;--soft:#f4f6f4;--red:#b3261e;--amber:#8a5a00;--green:#2e7d32;--blue:#1e4fd8}
 *{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
-body{margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg)}
-main{max-width:1024px;margin:0 auto;padding:56px 28px 64px}
-.top{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:32px}
-.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
-h1{font:normal 44px/1.05 Georgia,'Times New Roman',serif;letter-spacing:-.02em;margin:10px 0 8px}
-.sub{color:var(--muted);line-height:1.6;margin:0 0 14px;max-width:60ch}
-.nav{display:flex;gap:8px;margin-top:14px}
-.nav a{font-size:13px;color:var(--ink);text-decoration:none;border:1px solid var(--line);background:var(--card);padding:8px 14px;border-radius:999px}
-.nav a[aria-current="page"]{background:var(--ink);border-color:var(--ink);color:#fff}
-button{font:inherit;background:var(--ink);color:#fff;border:0;border-radius:6px;padding:11px 18px;cursor:pointer;white-space:nowrap}
-button:disabled{opacity:.4;cursor:default}button:hover:enabled{background:#4a4f52}
-button.secondary{background:#eceae6;color:var(--ink)}
-#error{color:var(--bad);font-size:13px;margin-bottom:12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:20px}
-.pad{padding:24px}
-.section-head{padding:20px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line)}
-h2{font-size:17px;font-weight:600;margin:0}
-.card p,.card .hint{color:var(--muted);line-height:1.6;font-size:14px}
-.card p{margin:0 0 4px}
-form.row{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin-top:16px}
-label.field{display:grid;gap:6px;font-size:12px;color:var(--muted)}
-input,select{font:inherit;color:var(--ink);padding:10px 12px;border:1px solid #d9d7d2;border-radius:6px;background:#fff}
-.status-line{font-size:13px;margin:12px 0 0;color:var(--muted)}
-.metrics{display:grid;grid-template-columns:1fr 1fr 1.5fr;background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:20px;overflow:hidden}
-.metric{padding:24px 28px;border-right:1px solid var(--line)}.metric:last-child{border:0}
-.value{font-size:32px;margin-top:12px;letter-spacing:-.02em}
-table{width:100%;border-collapse:collapse;text-align:left}
-th{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:600}
-th,td{padding:15px 24px;border-top:1px solid var(--line)}td{font-size:14px}
-tbody tr:first-child td,tbody tr:first-child th{border-top:0}
-thead th{border-top:0}
-.tag,.status{display:inline-block;background:var(--good-bg);color:var(--good);padding:4px 10px;border-radius:999px;font-size:12px}
-.alert{background:var(--bad-bg);color:var(--bad)}
-.muted{color:var(--muted)}
-.alert-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 24px;border-top:1px solid var(--line)}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:16px 16px 48px;display:flex;flex-direction:column;gap:20px}
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:8px}
+.eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+h1{font-size:22px;margin:4px 0 0;font-weight:700}
+.sub{color:var(--muted);font-size:13px;margin:2px 0 0}
+.nav{display:flex;gap:8px;margin-top:10px}
+.nav a{font-size:14px;color:var(--fg);text-decoration:none;border:1px solid #b7beb9;background:#fff;padding:6px 12px;border-radius:6px;min-height:36px;display:inline-flex;align-items:center}
+.nav a[aria-current="page"]{background:var(--fg);border-color:var(--fg);color:#fff}
+button{font:inherit;font-size:14px;padding:6px 12px;border:1px solid #b7beb9;background:#fff;border-radius:6px;cursor:pointer;min-height:36px;color:var(--fg)}
+button:hover:enabled{background:var(--soft)}
+button:disabled{opacity:.5;cursor:default}
+button.primary{background:var(--fg);color:#fff;border-color:var(--fg)}
+button.primary:hover:enabled{background:#333}
+button.secondary{background:#fff}
+button:focus-visible,.nav a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+#error,#message{color:var(--red);font-size:13px;min-height:1em}
+.muted{color:var(--muted);font-size:13px}
+.card{display:flex;flex-direction:column;gap:6px}
+.pad{display:flex;flex-direction:column;gap:8px}
+.section-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+h2{font-size:17px;margin:0}
+.card p{margin:0;color:var(--muted);font-size:14px}
+form.row{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
+label.field{display:flex;flex-direction:column;gap:3px;font-size:13px;color:var(--muted)}
+input,select{font:inherit;font-size:14px;padding:6px 8px;border:1px solid #b7beb9;border-radius:6px;min-height:36px;background:#fff;color:var(--fg)}
+.status-line{font-size:13px;color:var(--muted);margin:0}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.metric{border:1px solid var(--line);border-radius:8px;padding:12px}
+.value{display:block;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:2px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600}
+.tag,.status{color:var(--green);font-weight:600;font-size:13px}
+.alert-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid #e9b4ae;background:#fdf1ef;border-radius:8px;margin-top:8px}
 .alert-actions{display:flex;gap:8px}
-.test-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:16px 24px;border-top:1px solid var(--line)}
-.test-actions button{background:#6c6c66}
-.family p{color:var(--ink);white-space:pre-line;font-size:14px}
-.empty{padding:24px;color:var(--muted);font-size:14px;border-top:1px solid var(--line)}
-footer.meta{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-top:20px;font-size:12px;color:var(--muted)}
-#updated{font-size:12px;color:var(--muted);margin:16px 0}
-.controls{display:flex;gap:8px}.controls button{padding:8px 12px}
-.voice-item{padding:16px 0;border-top:1px solid var(--line)}
+.test-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:4px 0}
+.family p{color:var(--fg)}
+.empty{color:var(--muted);font-size:14px;padding:8px 0}
+footer.meta{font-size:12px;color:var(--muted);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+#updated{font-size:13px;color:var(--muted)}
+.controls{display:flex;gap:8px}
+.voice-item{padding:10px 0;border-top:1px solid var(--line)}
 .voice-item:first-of-type{border-top:0}
-.voice-item p{margin:6px 0}
-.lunch-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.voice-item p{margin:4px 0}
+.lunch-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .note{font-size:12px;color:var(--muted)}
-#message{color:var(--bad);font-size:13px;margin-bottom:12px}
-@media(max-width:640px){main{padding:32px 16px 48px}h1{font-size:34px}.top{flex-direction:column}.metrics{grid-template-columns:1fr}.metric{border-right:0;border-bottom:1px solid var(--line)}.metric:last-child{border-bottom:0}th,td{padding:13px 12px}.section-head,.pad{padding:18px 16px}footer.meta{flex-wrap:wrap}.alert-row{flex-direction:column;align-items:flex-start}.lunch-grid{grid-template-columns:1fr}}
+@media(max-width:640px){main{padding:12px 12px 40px}h1{font-size:20px}.alert-row{flex-direction:column;align-items:flex-start}.lunch-grid{grid-template-columns:1fr}}
+.pad>button{align-self:flex-start}
 </style></head><body><main>
 <header class="top"><div><div class="eyebrow">Atech / Tagly · Staff</div><h1>Daily care</h1><p class="sub">Patient 1 · today’s routine and requests</p><nav class="nav" aria-label="Views"><a href="/">Medication log</a><a href="/staff" aria-current="page">Staff view</a></nav></div><button id="refresh">Refresh</button></header>
 <div id="message" role="status"></div>
-<section class="card"><div class="section-head"><h2>Today’s status</h2><span class="eyebrow" id="today-date"></span></div><table><thead><tr><th>Routine</th><th>Status</th><th>Last activity</th></tr></thead><tbody id="status-rows"></tbody></table></section>
-<section class="card"><div class="section-head"><h2>Open alerts</h2><span class="eyebrow">Staff action needed</span></div><div id="alerts"></div></section>
-<section class="card"><div class="section-head"><h2>Wake deadline</h2><span class="eyebrow">Patient 1</span></div><div class="pad"><form class="row" id="wake-form"><label class="field">Deadline<input id="wake-time" type="time" value="09:00" required></label><button>Save deadline</button></form><p class="status-line" id="wake-status">Default: 09:00 local time.</p></div></section>
-<section class="card"><div class="section-head"><h2>Today’s event log</h2><span class="eyebrow">Newest first</span></div><div style="overflow:auto"><table><thead><tr><th>Time</th><th>Event</th><th>Source</th></tr></thead><tbody id="event-rows"></tbody></table></div><div class="empty" id="event-empty" hidden>No events recorded today.</div><div class="test-actions"><span class="eyebrow">TEST ONLY</span><button data-test="presence">Gets up</button><button data-test="meds_taken">Takes pills</button><button data-test="company">Wants company</button></div></section>
-<section class="card"><div class="section-head"><h2>Family update</h2><span class="eyebrow">Based on today’s recorded events</span></div><div class="pad family"><button id="family-button">Write update</button><p id="family-text"></p></div></section>
+<section class="card"><div class="section-head"><h2>Today’s status</h2><span class="muted" id="today-date"></span></div><table><thead><tr><th>Routine</th><th>Status</th><th>Last activity</th></tr></thead><tbody id="status-rows"></tbody></table></section>
+<section class="card"><div class="section-head"><h2>Open alerts</h2><span class="muted">Staff action needed</span></div><div id="alerts"></div></section>
+<section class="card"><div class="section-head"><h2>Wake deadline</h2><span class="muted">Patient 1</span></div><div class="pad"><form class="row" id="wake-form"><label class="field">Deadline<input id="wake-time" type="time" value="09:00" required></label><button class="primary">Save deadline</button></form><p class="status-line" id="wake-status">Default: 09:00 local time.</p></div></section>
+<section class="card"><div class="section-head"><h2>Today’s event log</h2><span class="muted">Newest first</span></div><div style="overflow:auto"><table><thead><tr><th>Time</th><th>Event</th><th>Source</th></tr></thead><tbody id="event-rows"></tbody></table></div><div class="empty" id="event-empty" hidden>No events recorded today.</div><div class="test-actions"><span class="muted">TEST ONLY</span><button data-test="presence">Gets up</button><button data-test="meds_taken">Takes pills</button><button data-test="company">Wants company</button></div></section>
+<section class="card"><div class="section-head"><h2>Family update</h2><span class="muted">Based on today’s recorded events</span></div><div class="pad family"><button class="primary" id="family-button">Write update</button><p id="family-text"></p></div></section>
 <footer class="meta" id="updated">Loading today’s activity… · Refreshes every 5 seconds</footer>
 <script>
 const el=id=>document.getElementById(id),labels={presence:'Up',meds_taken:'Pills confirmed',company:'Company requested',no_wake:'No morning activity',meds_missed:'Pills not confirmed'};
@@ -225,15 +227,15 @@ refresh();setInterval(refresh,5000);
 </main></body></html>'''
 
 
-VOICE_PANEL = '''<section class="card"><div class="section-head"><h2>Voice requests</h2><span class="eyebrow">From the board · every 2s</span></div><div class="pad"><div id="voice-requests" role="status">Loading…</div></div></section>
+VOICE_PANEL = '''<section class="card"><div class="section-head"><h2>Voice requests</h2><span class="muted">From the board · every 2s</span></div><div class="pad"><div id="voice-requests" role="status">Loading…</div></div></section>
 <script>(()=>{async function loadVoice(){const box=document.getElementById('voice-requests');try{const response=await fetch('/api/voice/requests',{cache:'no-store'});if(!response.ok)throw Error('Could not load requests');const rows=await response.json();box.replaceChildren();if(!rows.length){box.textContent='No voice requests yet.';return}const names={request_help:'Help requested',request_floor_activity:'Company / activity',choose_lunch:'Lunch preference',medication_reminder:'Medication reminder'};for(const row of rows.slice(0,20)){const card=document.createElement('div');card.className='voice-item';const title=document.createElement('strong');title.textContent=(names[row.tool]||row.tool)+' · '+new Date(row.result.created_at_utc).toLocaleTimeString();const details=document.createElement('p');details.textContent=Object.entries(row.arguments).filter(([k,v])=>v!==''&&k!=='timezone').map(([k,v])=>k+': '+v).join(' · ');const status=document.createElement('div');status.textContent=row.result.message||row.result.status;card.append(title,details,status);box.append(card)}}catch(error){box.textContent=error.message}}loadVoice();setInterval(loadVoice,2000)})();</script>'''
 PAGE = PAGE.replace('</main>', VOICE_PANEL + '</main>')
 STAFF_PAGE = STAFF_PAGE.replace('</main>', VOICE_PANEL + '</main>')
 
-LUNCH_PANEL = '''<section class="card"><div class="section-head"><h2>Ask patient about lunch</h2><span class="eyebrow">Board speaks · button 1 answers</span></div><div class="pad"><p>The board speaks these options. The patient holds button 1 to answer.</p>
+LUNCH_PANEL = '''<section class="card"><div class="section-head"><h2>Ask patient about lunch</h2><span class="muted">Board speaks · button 1 answers</span></div><div class="pad"><p>The board speaks these options. The patient holds button 1 to answer.</p>
 <form class="row" id="lunch-form"><div class="lunch-grid"><label class="field">Option 1<input id="lunch-option-one" value="Vegetarian pasta" maxlength="80" required><select id="lunch-category-one"><option value="vegetarian">Vegetarian</option><option value="meat">Meat</option><option value="vegan">Vegan</option><option value="fish">Fish</option><option value="other">Other</option></select></label>
 <label class="field">Option 2<input id="lunch-option-two" value="Chicken and rice" maxlength="80" required><select id="lunch-category-two"><option value="meat">Meat</option><option value="vegetarian">Vegetarian</option><option value="vegan">Vegan</option><option value="fish">Fish</option><option value="other">Other</option></select></label></div>
-<button id="ask-lunch">Ask patient</button><button id="cancel-lunch" class="secondary" type="button" hidden>Cancel question</button></form><p class="status-line" id="lunch-status" role="status">Ready to ask.</p></div></section>
+<button class="primary" id="ask-lunch">Ask patient</button><button id="cancel-lunch" class="secondary" type="button" hidden>Cancel question</button></form><p class="status-line" id="lunch-status" role="status">Ready to ask.</p></div></section>
 <script>(()=>{const byId=id=>document.getElementById(id);let current=null;async function loadLunch(){try{const response=await fetch('/api/lunch',{cache:'no-store'});if(!response.ok)throw Error('Could not load lunch status');current=(await response.json()).question;const active=current&&['queued','awaiting_answer'].includes(current.status);byId('ask-lunch').disabled=!!active;byId('cancel-lunch').hidden=!active;const labels={queued:'Queued — waiting for the board to speak.',awaiting_answer:'Question spoken — waiting for the patient’s answer.',cancelled:'Question cancelled. Ready to ask again.'};byId('lunch-status').textContent=!current?'Ready to ask.':current.status==='answered'?'Patient answered: '+(current.details||current.choice)+' · '+current.choice:labels[current.status]}catch(error){byId('lunch-status').textContent=error.message}}
 byId('lunch-form').onsubmit=async event=>{event.preventDefault();byId('ask-lunch').disabled=true;try{const options=[{label:byId('lunch-option-one').value,choice:byId('lunch-category-one').value},{label:byId('lunch-option-two').value,choice:byId('lunch-category-two').value}];const response=await fetch('/api/lunch/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patient_id:1,options})});const data=await response.json();if(!response.ok)throw Error(data.error);await loadLunch()}catch(error){byId('lunch-status').textContent=error.message;byId('ask-lunch').disabled=false}};
 byId('cancel-lunch').onclick=async()=>{if(!current)return;await fetch('/api/lunch/'+current.id+'/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});await loadLunch()};loadLunch();setInterval(loadLunch,2000)})();</script>'''

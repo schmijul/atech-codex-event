@@ -234,3 +234,9 @@
 
 - Screenshot review revealed the Voice requests panel twice on both pages: adding </main> after each page script while the original </main> before the script remained gave two </main> anchors, so the VOICE_PANEL string replace fired twice (duplicate element IDs).
 - Removed the earlier </main> on both pages so each has exactly one; content, scripts, then a single close. Added test_dashboard_pages.py (one main, one voice panel, one lunch form per page, nav present); it and test_lunch_flow.py pass.
+
+## 2026-10-26 — Apply staff.html prototype look and push
+
+- User supplied tagly-dashboard.zip (Oct 24 prototype: staff.html + demo_server.py with menu/handled endpoints). Adopted its visual language on both dashboard pages, keeping all current functions and IDs: white background, system-ui font, small 22px headings, open sections instead of cards, summary boxes for metrics, bordered buttons with dark primary actions, bottom-border tables, green status text, red alert boxes, blue focus outlines.
+- Fixed a stretched full-width Write update button with .pad>button{align-self:flex-start}.
+- Verified: py_compile, git diff --check, test_dashboard_pages.py (2 OK), test_lunch_flow.py (3 OK), headless screenshots of / and /staff. The prototype's menu/handled/read_menu features remain unintegrated (separate step).
