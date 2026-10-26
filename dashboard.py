@@ -25,39 +25,63 @@ PAGE = '''<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Medication log</title>
 <style>
-:root{font-family:'Helvetica Neue',Arial,sans-serif;color:#2f3437;background:#f7f6f3}
-*{box-sizing:border-box}body{margin:0}main{max-width:1040px;margin:auto;padding:64px 28px}
-header{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:40px}
-.eyebrow,th{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:#787774}
-h1{font:normal 52px Georgia,serif;letter-spacing:-.04em;margin:12px 0}p{color:#787774;line-height:1.6}
-button{background:#2f3437;color:white;border:0;border-radius:4px;padding:12px 18px;cursor:pointer}
-button:disabled{opacity:.4;cursor:default}button:hover:enabled{background:#444}
-.metrics{display:grid;grid-template-columns:1fr 1fr 1.5fr;border:1px solid #eaeaea;border-radius:8px;background:white;margin-bottom:40px}
-.metric{padding:28px;border-right:1px solid #eaeaea}.metric:last-child{border:0}
-.value{font-size:32px;margin-top:14px;letter-spacing:-.03em}.value small{font-size:14px;color:#787774}
-section{background:white;border:1px solid #eaeaea;border-radius:8px;overflow:hidden}
-.schedule{background:white;border:1px solid #eaeaea;border-radius:8px;padding:24px;margin-bottom:24px}
-.schedule form{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin-top:16px}
-.schedule label{display:grid;gap:6px;font-size:12px;color:#787774}
-.schedule input{font:inherit;padding:10px;border:1px solid #ddd;border-radius:4px}
-.schedule-status{font-size:13px;margin:12px 0 0}
-.section-head{padding:24px;display:flex;align-items:center;justify-content:space-between;gap:20px}
-h2{font-size:18px;font-weight:500;margin:0}table{width:100%;border-collapse:collapse;text-align:left}
-th,td{padding:17px 24px;border-top:1px solid #eaeaea}td{font-size:14px}
-.tag{background:#edf3ec;color:#346538;padding:5px 9px;border-radius:4px;font-size:12px}
-footer{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-top:20px;font-size:12px;color:#787774}
-.controls{display:flex;gap:8px}.controls button{padding:8px 12px}#error{color:#9f2f2d}#empty{padding:32px 24px;border-top:1px solid #eaeaea}
-@media(max-width:600px){main{padding:32px 16px}h1{font-size:40px}.metrics{grid-template-columns:1fr}.metric{border-right:0;border-bottom:1px solid #eaeaea}th,td{padding:16px 12px}footer{flex-wrap:wrap}.section-head{padding:20px 12px}}
+:root{--bg:#f7f6f3;--ink:#2f3437;--muted:#787774;--card:#fff;--line:#e8e6e1;--good-bg:#edf3ec;--good:#346538;--bad:#9f2f2d;--bad-bg:#f8eeee}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg)}
+main{max-width:1024px;margin:0 auto;padding:56px 28px 64px}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:32px}
+.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
+h1{font:normal 44px/1.05 Georgia,'Times New Roman',serif;letter-spacing:-.02em;margin:10px 0 8px}
+.sub{color:var(--muted);line-height:1.6;margin:0 0 14px;max-width:60ch}
+.nav{display:flex;gap:8px;margin-top:14px}
+.nav a{font-size:13px;color:var(--ink);text-decoration:none;border:1px solid var(--line);background:var(--card);padding:8px 14px;border-radius:999px}
+.nav a[aria-current="page"]{background:var(--ink);border-color:var(--ink);color:#fff}
+button{font:inherit;background:var(--ink);color:#fff;border:0;border-radius:6px;padding:11px 18px;cursor:pointer;white-space:nowrap}
+button:disabled{opacity:.4;cursor:default}button:hover:enabled{background:#4a4f52}
+button.secondary{background:#eceae6;color:var(--ink)}
+#error{color:var(--bad);font-size:13px;margin-bottom:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:20px}
+.pad{padding:24px}
+.section-head{padding:20px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line)}
+h2{font-size:17px;font-weight:600;margin:0}
+.card p,.card .hint{color:var(--muted);line-height:1.6;font-size:14px}
+.card p{margin:0 0 4px}
+form.row{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin-top:16px}
+label.field{display:grid;gap:6px;font-size:12px;color:var(--muted)}
+input,select{font:inherit;color:var(--ink);padding:10px 12px;border:1px solid #d9d7d2;border-radius:6px;background:#fff}
+.status-line{font-size:13px;margin:12px 0 0;color:var(--muted)}
+.metrics{display:grid;grid-template-columns:1fr 1fr 1.5fr;background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:20px;overflow:hidden}
+.metric{padding:24px 28px;border-right:1px solid var(--line)}.metric:last-child{border:0}
+.value{font-size:32px;margin-top:12px;letter-spacing:-.02em}
+table{width:100%;border-collapse:collapse;text-align:left}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:600}
+th,td{padding:15px 24px;border-top:1px solid var(--line)}td{font-size:14px}
+tbody tr:first-child td,tbody tr:first-child th{border-top:0}
+thead th{border-top:0}
+.tag,.status{display:inline-block;background:var(--good-bg);color:var(--good);padding:4px 10px;border-radius:999px;font-size:12px}
+.alert-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 24px;border-top:1px solid var(--line)}
+.alert-actions{display:flex;gap:8px}
+.test-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:16px 24px;border-top:1px solid var(--line)}
+.test-actions button{background:#6c6c66}
+.family p{color:var(--ink);white-space:pre-line;font-size:14px}
+.empty{padding:24px;color:var(--muted);font-size:14px;border-top:1px solid var(--line)}
+footer.meta{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-top:20px;font-size:12px;color:var(--muted)}
+.controls{display:flex;gap:8px}.controls button{padding:8px 12px}
+.voice-item{padding:16px 0;border-top:1px solid var(--line)}
+.voice-item:first-of-type{border-top:0}
+.voice-item p{margin:6px 0}
+.lunch-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.note{font-size:12px;color:var(--muted)}
+@media(max-width:640px){main{padding:32px 16px 48px}h1{font-size:34px}.top{flex-direction:column}.metrics{grid-template-columns:1fr}.metric{border-right:0;border-bottom:1px solid var(--line)}.metric:last-child{border-bottom:0}th,td{padding:13px 12px}.section-head,.pad{padding:18px 16px}footer.meta{flex-wrap:wrap}.alert-row{flex-direction:column;align-items:flex-start}.lunch-grid{grid-template-columns:1fr}}
 </style>
-<main>
-<header><div><div class="eyebrow">Atech / Home assistant</div><h1>Medication log</h1><p>Button confirmations, recorded as they happen.</p><a href="/staff">Staff view →</a></div><button id="refresh">Refresh</button></header>
+</head><body><main>
+<header class="top"><div><div class="eyebrow">Atech / Home assistant</div><h1>Medication log</h1><p class="sub">Button confirmations, recorded as they happen.</p><nav class="nav" aria-label="Views"><a href="/" aria-current="page">Medication log</a><a href="/staff">Staff view</a></nav></div><button id="refresh">Refresh</button></header>
 <div id="error" role="status"></div>
-<section class="schedule"><h2>Daily reminder</h2><p>Choose when the board should start its medication reminder. The time uses this browser’s local timezone: <span id="schedule-zone"></span>.</p><form id="schedule-form"><label>Start time<input id="reminder-time" type="time" required></label><button id="save-reminder">Save reminder</button><button id="disable-reminder" type="button">Turn off</button></form><p class="schedule-status" id="schedule-status" role="status">Loading reminder…</p></section>
+<section class="card"><div class="section-head"><h2>Daily reminder</h2></div><div class="pad"><p>Choose when the board should start its medication reminder. The time uses this browser’s local timezone: <span id="schedule-zone"></span>.</p><form class="row" id="schedule-form"><label class="field">Start time<input id="reminder-time" type="time" required></label><button id="save-reminder">Save reminder</button><button id="disable-reminder" class="secondary" type="button">Turn off</button></form><p class="status-line" id="schedule-status" role="status">Loading reminder…</p></div></section>
 <div class="metrics"><div class="metric"><div class="eyebrow">Today</div><div class="value" id="today">—</div></div><div class="metric"><div class="eyebrow">All confirmations</div><div class="value" id="total">—</div></div><div class="metric"><div class="eyebrow">Last recorded</div><div class="value" id="latest">—</div></div></div>
-<section><div class="section-head"><h2>Confirmation history</h2><span class="eyebrow">Newest first</span></div><table><thead><tr><th>ID</th><th>Date & time</th><th>Event</th></tr></thead><tbody id="rows"></tbody></table><div id="empty" hidden>No confirmations yet. Start the logger and press the medication button to record one.</div></section>
-<footer><span id="status">Reading meds_taken.sqlite3…</span><div class="controls"><button id="prev">Previous</button><button id="next">Next</button></div></footer>
-<p style="font-size:12px">Times shown in <span id="zone"></span>. A confirmation records a button press; no medication schedule is configured.</p>
-</main>
+<section class="card"><div class="section-head"><h2>Confirmation history</h2><span class="eyebrow">Newest first</span></div><table><thead><tr><th>ID</th><th>Date & time</th><th>Event</th></tr></thead><tbody id="rows"></tbody></table><div class="empty" id="empty" hidden>No confirmations yet. Start the logger and press the medication button to record one.</div></section>
+<footer class="meta"><span id="status">Reading meds_taken.sqlite3…</span><div class="controls"><button id="prev">Previous</button><button id="next">Next</button></div></footer>
+<p class="note">Times shown in <span id="zone"></span>. A confirmation records a button press; no medication schedule is configured.</p>
 <script>
 let events=[], page=0;
 const size=50, el=id=>document.getElementById(id);
@@ -118,22 +142,73 @@ el('refresh').onclick=refresh;
 el('prev').onclick=()=>{page--;render()};el('next').onclick=()=>{page++;render()};
 refresh();loadReminder();setInterval(refresh,5000);
 </script>
-</html>'''
+</main></body></html>'''
 
 STAFF_PAGE = '''<!doctype html>
-<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tagly · Staff</title>
 <style>
-:root{font-family:'Helvetica Neue',Arial,sans-serif;color:#2f3437;background:#f7f6f3}*{box-sizing:border-box}body{margin:0}main{max-width:1040px;margin:auto;padding:56px 28px}header{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:32px}.eyebrow,th{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:#787774}h1{font:normal 48px Georgia,serif;letter-spacing:-.04em;margin:12px 0}h2{font-size:18px;font-weight:500;margin:0}p{color:#787774;line-height:1.6}a{color:#2f3437}button{background:#2f3437;color:white;border:0;border-radius:4px;padding:10px 14px;cursor:pointer}button:disabled{opacity:.4;cursor:default}button.secondary{background:#eee;color:#2f3437}section,.schedule{background:white;border:1px solid #eaeaea;border-radius:8px;overflow:hidden;margin-bottom:20px}.schedule{padding:24px}.section-head{padding:22px 24px;display:flex;justify-content:space-between;align-items:center;gap:16px}table{width:100%;border-collapse:collapse;text-align:left}th,td{padding:15px 20px;border-top:1px solid #eaeaea}td{font-size:14px}.status{background:#edf3ec;color:#346538;padding:5px 9px;border-radius:4px;font-size:12px}.alert{background:#f8eeee;color:#8c3030}.muted{color:#787774}.alert-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 24px;border-top:1px solid #eaeaea}.alert-actions{display:flex;gap:8px}.schedule form,.test-actions{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.schedule label{display:grid;gap:6px;font-size:12px;color:#787774}.schedule input{font:inherit;padding:10px;border:1px solid #ddd;border-radius:4px}.schedule p{margin:10px 0 0;font-size:13px}.test-actions{padding:18px 24px;border-top:1px solid #eaeaea}.test-actions button{background:#6c6c66}.family{padding:22px 24px}.family p{color:#2f3437;white-space:pre-line}.empty{padding:20px 24px;border-top:1px solid #eaeaea;color:#787774}footer{font-size:12px;color:#787774;margin:16px 0}#message{color:#8c3030}@media(max-width:600px){main{padding:32px 16px}h1{font-size:40px}.section-head,.alert-row{padding:18px 14px;align-items:flex-start;flex-direction:column}th,td{padding:13px 10px}.family{padding:18px 14px}}
-</style><main>
-<header><div><div class="eyebrow">Atech / Tagly · Staff</div><h1>Daily care</h1><p>Patient 1 · today’s routine and requests</p><a href="/">Medication log →</a></div><button id="refresh">Refresh</button></header>
+:root{--bg:#f7f6f3;--ink:#2f3437;--muted:#787774;--card:#fff;--line:#e8e6e1;--good-bg:#edf3ec;--good:#346538;--bad:#9f2f2d;--bad-bg:#f8eeee}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg)}
+main{max-width:1024px;margin:0 auto;padding:56px 28px 64px}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:32px}
+.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
+h1{font:normal 44px/1.05 Georgia,'Times New Roman',serif;letter-spacing:-.02em;margin:10px 0 8px}
+.sub{color:var(--muted);line-height:1.6;margin:0 0 14px;max-width:60ch}
+.nav{display:flex;gap:8px;margin-top:14px}
+.nav a{font-size:13px;color:var(--ink);text-decoration:none;border:1px solid var(--line);background:var(--card);padding:8px 14px;border-radius:999px}
+.nav a[aria-current="page"]{background:var(--ink);border-color:var(--ink);color:#fff}
+button{font:inherit;background:var(--ink);color:#fff;border:0;border-radius:6px;padding:11px 18px;cursor:pointer;white-space:nowrap}
+button:disabled{opacity:.4;cursor:default}button:hover:enabled{background:#4a4f52}
+button.secondary{background:#eceae6;color:var(--ink)}
+#error{color:var(--bad);font-size:13px;margin-bottom:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:20px}
+.pad{padding:24px}
+.section-head{padding:20px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line)}
+h2{font-size:17px;font-weight:600;margin:0}
+.card p,.card .hint{color:var(--muted);line-height:1.6;font-size:14px}
+.card p{margin:0 0 4px}
+form.row{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin-top:16px}
+label.field{display:grid;gap:6px;font-size:12px;color:var(--muted)}
+input,select{font:inherit;color:var(--ink);padding:10px 12px;border:1px solid #d9d7d2;border-radius:6px;background:#fff}
+.status-line{font-size:13px;margin:12px 0 0;color:var(--muted)}
+.metrics{display:grid;grid-template-columns:1fr 1fr 1.5fr;background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:20px;overflow:hidden}
+.metric{padding:24px 28px;border-right:1px solid var(--line)}.metric:last-child{border:0}
+.value{font-size:32px;margin-top:12px;letter-spacing:-.02em}
+table{width:100%;border-collapse:collapse;text-align:left}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:600}
+th,td{padding:15px 24px;border-top:1px solid var(--line)}td{font-size:14px}
+tbody tr:first-child td,tbody tr:first-child th{border-top:0}
+thead th{border-top:0}
+.tag,.status{display:inline-block;background:var(--good-bg);color:var(--good);padding:4px 10px;border-radius:999px;font-size:12px}
+.alert{background:var(--bad-bg);color:var(--bad)}
+.muted{color:var(--muted)}
+.alert-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 24px;border-top:1px solid var(--line)}
+.alert-actions{display:flex;gap:8px}
+.test-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:16px 24px;border-top:1px solid var(--line)}
+.test-actions button{background:#6c6c66}
+.family p{color:var(--ink);white-space:pre-line;font-size:14px}
+.empty{padding:24px;color:var(--muted);font-size:14px;border-top:1px solid var(--line)}
+footer.meta{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-top:20px;font-size:12px;color:var(--muted)}
+#updated{font-size:12px;color:var(--muted);margin:16px 0}
+.controls{display:flex;gap:8px}.controls button{padding:8px 12px}
+.voice-item{padding:16px 0;border-top:1px solid var(--line)}
+.voice-item:first-of-type{border-top:0}
+.voice-item p{margin:6px 0}
+.lunch-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.note{font-size:12px;color:var(--muted)}
+#message{color:var(--bad);font-size:13px;margin-bottom:12px}
+@media(max-width:640px){main{padding:32px 16px 48px}h1{font-size:34px}.top{flex-direction:column}.metrics{grid-template-columns:1fr}.metric{border-right:0;border-bottom:1px solid var(--line)}.metric:last-child{border-bottom:0}th,td{padding:13px 12px}.section-head,.pad{padding:18px 16px}footer.meta{flex-wrap:wrap}.alert-row{flex-direction:column;align-items:flex-start}.lunch-grid{grid-template-columns:1fr}}
+</style></head><body><main>
+<header class="top"><div><div class="eyebrow">Atech / Tagly · Staff</div><h1>Daily care</h1><p class="sub">Patient 1 · today’s routine and requests</p><nav class="nav" aria-label="Views"><a href="/">Medication log</a><a href="/staff" aria-current="page">Staff view</a></nav></div><button id="refresh">Refresh</button></header>
 <div id="message" role="status"></div>
-<section><div class="section-head"><h2>Today’s status</h2><span class="eyebrow" id="today-date"></span></div><table><thead><tr><th>Routine</th><th>Status</th><th>Last activity</th></tr></thead><tbody id="status-rows"></tbody></table></section>
-<section><div class="section-head"><h2>Open alerts</h2><span class="eyebrow">Staff action needed</span></div><div id="alerts"></div></section>
-<section><div class="section-head"><h2>Wake deadline</h2><span class="eyebrow">Patient 1</span></div><div class="schedule"><form id="wake-form"><label>Deadline<input id="wake-time" type="time" value="09:00" required></label><button>Save deadline</button></form><p id="wake-status">Default: 09:00 local time.</p></div></section>
-<section><div class="section-head"><h2>Today’s event log</h2><span class="eyebrow">Newest first</span></div><div style="overflow:auto"><table><thead><tr><th>Time</th><th>Event</th><th>Source</th></tr></thead><tbody id="event-rows"></tbody></table></div><div class="empty" id="event-empty" hidden>No events recorded today.</div><div class="test-actions"><span class="eyebrow">TEST ONLY</span><button data-test="presence">Gets up</button><button data-test="meds_taken">Takes pills</button><button data-test="company">Wants company</button></div></section>
-<section><div class="section-head"><h2>Family update</h2><span class="eyebrow">Based on today’s recorded events</span></div><div class="family"><button id="family-button">Write update</button><p id="family-text"></p></div></section>
-<footer id="updated">Loading today’s activity… · Refreshes every 5 seconds</footer></main>
+<section class="card"><div class="section-head"><h2>Today’s status</h2><span class="eyebrow" id="today-date"></span></div><table><thead><tr><th>Routine</th><th>Status</th><th>Last activity</th></tr></thead><tbody id="status-rows"></tbody></table></section>
+<section class="card"><div class="section-head"><h2>Open alerts</h2><span class="eyebrow">Staff action needed</span></div><div id="alerts"></div></section>
+<section class="card"><div class="section-head"><h2>Wake deadline</h2><span class="eyebrow">Patient 1</span></div><div class="pad"><form class="row" id="wake-form"><label class="field">Deadline<input id="wake-time" type="time" value="09:00" required></label><button>Save deadline</button></form><p class="status-line" id="wake-status">Default: 09:00 local time.</p></div></section>
+<section class="card"><div class="section-head"><h2>Today’s event log</h2><span class="eyebrow">Newest first</span></div><div style="overflow:auto"><table><thead><tr><th>Time</th><th>Event</th><th>Source</th></tr></thead><tbody id="event-rows"></tbody></table></div><div class="empty" id="event-empty" hidden>No events recorded today.</div><div class="test-actions"><span class="eyebrow">TEST ONLY</span><button data-test="presence">Gets up</button><button data-test="meds_taken">Takes pills</button><button data-test="company">Wants company</button></div></section>
+<section class="card"><div class="section-head"><h2>Family update</h2><span class="eyebrow">Based on today’s recorded events</span></div><div class="pad family"><button id="family-button">Write update</button><p id="family-text"></p></div></section>
+<footer class="meta" id="updated">Loading today’s activity… · Refreshes every 5 seconds</footer>
 <script>
 const el=id=>document.getElementById(id),labels={presence:'Up',meds_taken:'Pills confirmed',company:'Company requested',no_wake:'No morning activity',meds_missed:'Pills not confirmed'};
 function time(value){return new Date(value).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}
@@ -146,23 +221,24 @@ el('refresh').onclick=refresh;document.querySelectorAll('[data-test]').forEach(b
 el('wake-form').onsubmit=async e=>{e.preventDefault();try{const d=await call('/api/wake',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({time:el('wake-time').value,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})});el('wake-status').textContent='Deadline set to '+d.time+' · '+d.timezone;await refresh()}catch(error){el('message').textContent=error.message}};
 el('family-button').onclick=async()=>{el('family-button').disabled=true;try{const d=await call('/api/family-update?patient_id=1',{method:'POST'});el('family-text').textContent=d.message}catch(e){el('message').textContent=e.message}finally{el('family-button').disabled=false}};
 refresh();setInterval(refresh,5000);
-</script></html>'''
+</script>
+</main></body></html>'''
 
 
-VOICE_PANEL = '''<section style="margin:24px 0;background:white;border:1px solid #ddd;border-radius:8px;padding:24px"><h2>Voice requests</h2><p>Requests received from the board · updates every 2 seconds</p><div id="voice-requests" role="status">Loading…</div></section>
-<script>(()=>{async function loadVoice(){const box=document.getElementById('voice-requests');try{const response=await fetch('/api/voice/requests',{cache:'no-store'});if(!response.ok)throw Error('Could not load requests');const rows=await response.json();box.replaceChildren();if(!rows.length){box.textContent='No voice requests yet.';return}const names={request_help:'Help requested',request_floor_activity:'Company / activity',choose_lunch:'Lunch preference',medication_reminder:'Medication reminder'};for(const row of rows.slice(0,20)){const card=document.createElement('div');card.style.cssText='border-top:1px solid #eee;padding:16px 0';const title=document.createElement('strong');title.textContent=(names[row.tool]||row.tool)+' · '+new Date(row.result.created_at_utc).toLocaleTimeString();const details=document.createElement('p');details.textContent=Object.entries(row.arguments).filter(([k,v])=>v!==''&&k!=='timezone').map(([k,v])=>k+': '+v).join(' · ');const status=document.createElement('div');status.textContent=row.result.message||row.result.status;card.append(title,details,status);box.append(card)}}catch(error){box.textContent=error.message}}loadVoice();setInterval(loadVoice,2000)})();</script>'''
+VOICE_PANEL = '''<section class="card"><div class="section-head"><h2>Voice requests</h2><span class="eyebrow">From the board · every 2s</span></div><div class="pad"><div id="voice-requests" role="status">Loading…</div></div></section>
+<script>(()=>{async function loadVoice(){const box=document.getElementById('voice-requests');try{const response=await fetch('/api/voice/requests',{cache:'no-store'});if(!response.ok)throw Error('Could not load requests');const rows=await response.json();box.replaceChildren();if(!rows.length){box.textContent='No voice requests yet.';return}const names={request_help:'Help requested',request_floor_activity:'Company / activity',choose_lunch:'Lunch preference',medication_reminder:'Medication reminder'};for(const row of rows.slice(0,20)){const card=document.createElement('div');card.className='voice-item';const title=document.createElement('strong');title.textContent=(names[row.tool]||row.tool)+' · '+new Date(row.result.created_at_utc).toLocaleTimeString();const details=document.createElement('p');details.textContent=Object.entries(row.arguments).filter(([k,v])=>v!==''&&k!=='timezone').map(([k,v])=>k+': '+v).join(' · ');const status=document.createElement('div');status.textContent=row.result.message||row.result.status;card.append(title,details,status);box.append(card)}}catch(error){box.textContent=error.message}}loadVoice();setInterval(loadVoice,2000)})();</script>'''
 PAGE = PAGE.replace('</main>', VOICE_PANEL + '</main>')
 STAFF_PAGE = STAFF_PAGE.replace('</main>', VOICE_PANEL + '</main>')
 
-LUNCH_PANEL = '''<section class="schedule" style="padding:24px;margin-bottom:24px"><h2>Ask patient about lunch</h2><p>The board speaks these options. The patient holds button 1 to answer.</p>
-<form id="lunch-form"><label>Option 1<input id="lunch-option-one" value="Vegetarian pasta" maxlength="80" required><select id="lunch-category-one"><option value="vegetarian">Vegetarian</option><option value="meat">Meat</option><option value="vegan">Vegan</option><option value="fish">Fish</option><option value="other">Other</option></select></label>
-<label>Option 2<input id="lunch-option-two" value="Chicken and rice" maxlength="80" required><select id="lunch-category-two"><option value="meat">Meat</option><option value="vegetarian">Vegetarian</option><option value="vegan">Vegan</option><option value="fish">Fish</option><option value="other">Other</option></select></label>
-<button id="ask-lunch">Ask patient</button><button id="cancel-lunch" type="button" hidden>Cancel question</button></form><p id="lunch-status" role="status">Ready to ask.</p></section>
+LUNCH_PANEL = '''<section class="card"><div class="section-head"><h2>Ask patient about lunch</h2><span class="eyebrow">Board speaks · button 1 answers</span></div><div class="pad"><p>The board speaks these options. The patient holds button 1 to answer.</p>
+<form class="row" id="lunch-form"><div class="lunch-grid"><label class="field">Option 1<input id="lunch-option-one" value="Vegetarian pasta" maxlength="80" required><select id="lunch-category-one"><option value="vegetarian">Vegetarian</option><option value="meat">Meat</option><option value="vegan">Vegan</option><option value="fish">Fish</option><option value="other">Other</option></select></label>
+<label class="field">Option 2<input id="lunch-option-two" value="Chicken and rice" maxlength="80" required><select id="lunch-category-two"><option value="meat">Meat</option><option value="vegetarian">Vegetarian</option><option value="vegan">Vegan</option><option value="fish">Fish</option><option value="other">Other</option></select></label></div>
+<button id="ask-lunch">Ask patient</button><button id="cancel-lunch" class="secondary" type="button" hidden>Cancel question</button></form><p class="status-line" id="lunch-status" role="status">Ready to ask.</p></div></section>
 <script>(()=>{const byId=id=>document.getElementById(id);let current=null;async function loadLunch(){try{const response=await fetch('/api/lunch',{cache:'no-store'});if(!response.ok)throw Error('Could not load lunch status');current=(await response.json()).question;const active=current&&['queued','awaiting_answer'].includes(current.status);byId('ask-lunch').disabled=!!active;byId('cancel-lunch').hidden=!active;const labels={queued:'Queued — waiting for the board to speak.',awaiting_answer:'Question spoken — waiting for the patient’s answer.',cancelled:'Question cancelled. Ready to ask again.'};byId('lunch-status').textContent=!current?'Ready to ask.':current.status==='answered'?'Patient answered: '+(current.details||current.choice)+' · '+current.choice:labels[current.status]}catch(error){byId('lunch-status').textContent=error.message}}
 byId('lunch-form').onsubmit=async event=>{event.preventDefault();byId('ask-lunch').disabled=true;try{const options=[{label:byId('lunch-option-one').value,choice:byId('lunch-category-one').value},{label:byId('lunch-option-two').value,choice:byId('lunch-category-two').value}];const response=await fetch('/api/lunch/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patient_id:1,options})});const data=await response.json();if(!response.ok)throw Error(data.error);await loadLunch()}catch(error){byId('lunch-status').textContent=error.message;byId('ask-lunch').disabled=false}};
 byId('cancel-lunch').onclick=async()=>{if(!current)return;await fetch('/api/lunch/'+current.id+'/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});await loadLunch()};loadLunch();setInterval(loadLunch,2000)})();</script>'''
 PAGE = PAGE.replace('<div class="metrics">', LUNCH_PANEL + '<div class="metrics">')
-STAFF_PAGE = STAFF_PAGE.replace('<section><div class="section-head"><h2>Wake deadline', LUNCH_PANEL + '<section><div class="section-head"><h2>Wake deadline')
+STAFF_PAGE = STAFF_PAGE.replace('<section class="card"><div class="section-head"><h2>Wake deadline', LUNCH_PANEL + '<section class="card"><div class="section-head"><h2>Wake deadline')
 
 
 def connect(readonly=False):

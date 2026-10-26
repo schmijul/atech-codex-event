@@ -220,3 +220,17 @@
 
 - User requested pushing the latest changes and merging into main. Built the merge in an isolated worktree, keeping the running servers and live SQLite file available. Resolved source conflicts with the flashed/tested microphone firmware and integrated dashboard, preserving reminder and staff dashboard diary sections from both lines of work.
 - Included the pending Tagly dashboard specification and usage documentation. Live database changes, API keys, local Wi-Fi configuration, conversation memory, and Finder metadata are excluded from this merge. The merge retains the main branch's existing tracked database baseline; the live local database will stay intact.
+
+## 2026-10-26 — Finish dashboard visual overhaul
+
+- Pulled latest main (1e14a1d, merge of voice tools, lunch questions, and staff dashboard). Local branch was codex/voice-agent-tools; stashed the runtime SQLite change and fast-forwarded main (f0db0e4..1e14a1d). Note: no ~/fun/atech exists; the repo is ~/fun/atech-codex-event.
+- Problem: / and /staff used two divergent stylesheets plus inline-styled voice/lunch panels injected via string replace (three card systems, mismatched radii/padding, bare links instead of nav, no head/body structure, different mobile breakpoints).
+- Unified both pages on one monochrome token set (same warm background/ink/muted, 10px cards, 6px buttons, pill tags/nav), one 640px breakpoint, shared card/section-head/pad/metrics/table/alert/voice/lunch classes. Added a pill nav with aria-current on both pages. All element IDs and JS behavior unchanged; backend routes untouched.
+- Voice panel is now a card with section-head; its JS builds classed voice-item divs instead of inline cssText. Lunch panel is a card with a two-column option grid collapsing to one column on mobile. Cancel/secondary buttons use the secondary style.
+- Fixed along the way: staff script closed with </script></html> (now proper </main></body></html>) and the STAFF lunch-injection anchor still matched the old section markup.
+- Verified: py_compile, git diff --check, node --check on all 8 embedded scripts, temp-DB contract checks (POST /api/events {} -> 201 + history read, company event -> KOMMT GLEICH board state, wake/reminder/staff reads), all element IDs present on both pages, and existing test_lunch_flow.py (3 tests OK). Live meds_taken.sqlite3 untouched.
+
+## 2026-10-26 — Fix duplicated voice panel after overhaul
+
+- Screenshot review revealed the Voice requests panel twice on both pages: adding </main> after each page script while the original </main> before the script remained gave two </main> anchors, so the VOICE_PANEL string replace fired twice (duplicate element IDs).
+- Removed the earlier </main> on both pages so each has exactly one; content, scripts, then a single close. Added test_dashboard_pages.py (one main, one voice panel, one lunch form per page, nav present); it and test_lunch_flow.py pass.
